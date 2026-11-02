@@ -3,6 +3,14 @@ fn main() {
         let root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
         let resource =
             std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("quickfind.res");
+        let version = std::env::var("CARGO_PKG_VERSION").unwrap();
+        let numeric = format!("{},0", version.replace('.', ","));
+        let template = std::fs::read_to_string(root.join("assets/quickfind.rc")).unwrap();
+        let generated = template
+            .replace("0,2,0,0", &numeric)
+            .replace("0.2.0", &version);
+        let versioned_rc = resource.with_extension("rc");
+        std::fs::write(&versioned_rc, generated).unwrap();
         let rc = std::env::var_os("RC")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| {
@@ -21,7 +29,9 @@ fn main() {
             .current_dir(root.join("assets"))
             .arg("/nologo")
             .arg(format!("/fo{}", resource.display()))
-            .arg("quickfind.rc")
+            .arg("/I")
+            .arg(root.join("assets"))
+            .arg(&versioned_rc)
             .status()
             .expect("Windows resource compiler could not start");
         assert!(status.success(), "Windows icon resource compilation failed");

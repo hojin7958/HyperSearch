@@ -24,6 +24,7 @@ pub struct Settings {
     pub sort: SortField,
     pub descending: bool,
     pub fast_index: bool,
+    pub check_updates_on_startup: bool,
 }
 
 impl Default for Settings {
@@ -45,6 +46,7 @@ impl Default for Settings {
             sort: SortField::Modified,
             descending: true,
             fast_index: true,
+            check_updates_on_startup: true,
         }
     }
 }
@@ -85,6 +87,7 @@ mod tests {
             "roots": ["C:\\資料"], "font_size": 13.0, "query": "*보고서*.xlsx", "hotkey": "Ctrl+Alt+2"
         })).unwrap();
         assert!(settings.excluded_folders.is_empty());
+        assert!(settings.check_updates_on_startup);
         settings.excluded_folders = vec![r"C:\資料\제외".into()];
         let restored: Settings =
             serde_json::from_slice(&serde_json::to_vec(&settings).unwrap()).unwrap();

@@ -7,6 +7,7 @@ use crate::{
     model::Index,
     platform::{self, Shell, ShellEvent},
     settings::Settings,
+    updater,
 };
 use chrono::{DateTime, Local};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -52,6 +53,7 @@ const CHANGE_TIMER: usize = 2;
 const CACHE_TIMER: usize = 3;
 const STARTUP_SYNC_TIMER: usize = 4;
 const ACCESSIBILITY_TIMER: usize = 5;
+const RELEASE_TIMER: usize = 6;
 const QUERY: usize = 100;
 const REGEX: usize = 101;
 const PATH: usize = 102;
@@ -72,6 +74,9 @@ const QUERY_FRAME: usize = 207;
 const EXCLUDED_EDIT: usize = 220;
 const ADD_EXCLUDED: usize = 221;
 const REMOVE_EXCLUDED: usize = 222;
+const CHECK_RELEASE: usize = 230;
+const AUTO_RELEASE: usize = 224;
+const RELEASE_STATUS: usize = 225;
 const BG: u32 = 0x00201c19;
 const INPUT_BG: u32 = 0x002b2622;
 const FG: u32 = 0x00eee9e6;
@@ -128,6 +133,11 @@ enum AppEvent {
         result: Result<bool, String>,
     },
     Pasted(crate::file_clipboard::PasteResult),
+    ReleaseChecked {
+        manual: bool,
+        result: Result<Option<updater::Release>, String>,
+    },
+    ReleaseDownloaded(Result<updater::StagedUpdate, String>),
     Error(String),
 }
 struct SearchRequest {
@@ -883,6 +893,11 @@ struct App {
     excluded_edit: HWND,
     font_edit: HWND,
     auto_fast: HWND,
+    auto_release: HWND,
+    release_busy: bool,
+    release_text: String,
+    available_release: Option<updater::Release>,
+    staged_release: Option<updater::StagedUpdate>,
     settings_error: HWND,
     hotkey_paused: bool,
     font: HFONT,
@@ -1012,6 +1027,11 @@ pub fn run(settings: Settings) -> Result<(), String> {
             excluded_edit: null_mut(),
             font_edit: null_mut(),
             auto_fast: null_mut(),
+            auto_release: null_mut(),
+            release_busy: false,
+            release_text: format!("현재 v{}", updater::VERSION),
+            available_release: None,
+            staged_release: None,
             settings_error: null_mut(),
             hotkey_paused: false,
             font: null_mut(),
@@ -1300,6 +1320,7 @@ unsafe extern "system" fn main_proc(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
                         accessibility.notify_changed();
                     }
                 }
+                RELEASE_TIMER if app.settings.check_updates_on_startup => app.check_release(false),
                 STARTUP_SYNC_TIMER if app.settings.fast_index => {
                     if app.indexing
                         || app.updating
@@ -1891,6 +1912,9 @@ impl App {
             Err(error) => self.notice = error,
         }
         self.initializing = false;
+        if self.settings.check_updates_on_startup {
+            SetTimer(self.hwnd, RELEASE_TIMER, 5000, None);
+        }
         self.start_scan(true, false);
         self.update_status();
     }
@@ -2543,6 +2567,49 @@ impl App {
                         );
                     }
                     self.schedule_changes();
+                }
+                AppEvent::ReleaseChecked { manual, result } => {
+                    self.release_busy = false;
+                    match result {
+                        Ok(Some(release)) => {
+                            self.release_text = format!("새 버전 v{} 사용 가능", release.version);
+                            self.notice = format!(
+                                "새 버전 v{}가 있습니다. 설정에서 업데이트하세요.",
+                                release.version
+                            );
+                            self.available_release = Some(release);
+                            self.refresh_release_controls();
+                            if manual {
+                                self.download_release();
+                            }
+                        }
+                        Ok(None) => {
+                            self.release_text =
+                                format!("현재 v{} · 최신 버전입니다", updater::VERSION)
+                        }
+                        Err(error) => {
+                            self.release_text = format!("현재 v{} · 확인 실패", updater::VERSION);
+                            if manual {
+                                self.release_error(&error);
+                            }
+                        }
+                    }
+                    self.refresh_release_controls();
+                }
+                AppEvent::ReleaseDownloaded(result) => {
+                    self.release_busy = false;
+                    match result {
+                        Ok(staged) => {
+                            self.staged_release = Some(staged);
+                            self.release_text = "다운로드 완료 · 설치 준비됨".into();
+                            self.install_release();
+                        }
+                        Err(error) => {
+                            self.release_text = "다운로드 실패 · 다시 시도하세요".into();
+                            self.release_error(&error);
+                        }
+                    }
+                    self.refresh_release_controls();
                 }
                 AppEvent::Error(error) => self.notice = error,
                 _ => {}
@@ -4084,6 +4151,124 @@ impl App {
             DrawFocusRect(draw.hDC, &focus);
         }
     }
+    unsafe fn release_error(&mut self, error: &str) {
+        self.notice = error.into();
+        if !self.settings_window.is_null() {
+            SetWindowTextW(self.settings_error, wide(error).as_ptr());
+        }
+        self.update_status();
+    }
+    unsafe fn refresh_release_controls(&self) {
+        if self.settings_window.is_null() {
+            return;
+        }
+        SetWindowTextW(
+            GetDlgItem(self.settings_window, RELEASE_STATUS as i32),
+            wide(&self.release_text).as_ptr(),
+        );
+        let button = GetDlgItem(self.settings_window, CHECK_RELEASE as i32);
+        SetWindowTextW(
+            button,
+            wide(if self.release_busy {
+                "처리 중…"
+            } else if self.staged_release.is_some() {
+                "설치 후 재실행"
+            } else if self.available_release.is_some() {
+                "업데이트 설치…"
+            } else {
+                "업데이트 확인"
+            })
+            .as_ptr(),
+        );
+        EnableWindow(button, (!self.release_busy) as i32);
+    }
+    unsafe fn check_release(&mut self, manual: bool) {
+        if self.release_busy {
+            return;
+        }
+        if self.staged_release.is_some() {
+            self.install_release();
+            return;
+        }
+        if self.available_release.is_some() {
+            self.download_release();
+            return;
+        }
+        self.release_busy = true;
+        self.release_text = format!("현재 v{} · 확인 중…", updater::VERSION);
+        self.refresh_release_controls();
+        let events = self.events.clone();
+        if let Err(error) = std::thread::Builder::new()
+            .name("release-check".into())
+            .spawn(move || {
+                events.send(AppEvent::ReleaseChecked {
+                    manual,
+                    result: updater::check(),
+                });
+            })
+        {
+            self.release_busy = false;
+            self.release_error(&error.to_string());
+            self.refresh_release_controls();
+        }
+    }
+    unsafe fn download_release(&mut self) {
+        let Some(release) = self.available_release.clone() else {
+            return;
+        };
+        if self.release_busy {
+            return;
+        }
+        let owner = if self.settings_window.is_null() {
+            self.hwnd
+        } else {
+            self.settings_window
+        };
+        let answer = MessageBoxW(owner, wide(&format!("현재 v{} → 새 버전 v{}\n\n업데이트를 다운로드하고 앱을 다시 실행할까요?\n저장된 설정과 인덱스는 유지됩니다. 저장하지 않은 설정은 적용되지 않습니다.", updater::VERSION, release.version)).as_ptr(), wide("Hyperfinder 업데이트").as_ptr(), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+        if answer != IDYES {
+            return;
+        }
+        self.release_busy = true;
+        self.release_text = format!("v{} 다운로드 중…", release.version);
+        self.refresh_release_controls();
+        let events = self.events.clone();
+        if let Err(error) = std::thread::Builder::new()
+            .name("release-download".into())
+            .spawn(move || {
+                events.send(AppEvent::ReleaseDownloaded(updater::download(&release)));
+            })
+        {
+            self.release_busy = false;
+            self.release_error(&error.to_string());
+            self.refresh_release_controls();
+        }
+    }
+    unsafe fn install_release(&mut self) {
+        if self.file_operation_in_progress
+            || self.file_refresh_pending
+            || self.drag_active
+            || self.context_menu_active
+            || self.rename_target.is_some()
+            || self.indexing
+        {
+            self.release_error("다운로드가 완료되었습니다. 진행 중인 파일 작업·인덱싱을 마친 뒤 ‘설치 후 재실행’을 누르세요.");
+            return;
+        }
+        self.remember_geometry();
+        if let Err(error) = self.settings.save() {
+            self.release_error(&error);
+            return;
+        }
+        if let Some(staged) = self.staged_release.take() {
+            match staged.launch() {
+                Ok(()) => self.request_exit(),
+                Err(error) => {
+                    self.release_text = "설치 실패 · 다시 시도하세요".into();
+                    self.release_error(&error);
+                }
+            }
+        }
+    }
     unsafe fn show_settings(&mut self) {
         if !self.settings_window.is_null() {
             SetForegroundWindow(self.settings_window);
@@ -4093,7 +4278,7 @@ impl App {
         GetWindowRect(self.hwnd, &mut rect);
         let scale = GetDpiForWindow(self.hwnd).max(96) as f32 / 96.0;
         let mut width = (580.0 * scale) as i32;
-        let mut height = (650.0 * scale) as i32;
+        let mut height = (720.0 * scale) as i32;
         let mut x = rect.left + 70;
         let mut y = rect.top + 70;
         let mut monitor: MONITORINFO = zeroed();
@@ -4123,6 +4308,7 @@ impl App {
             GetModuleHandleW(null()),
             self as *mut App as _,
         );
+        self.refresh_release_controls();
         SetFocus(GetDlgItem(self.settings_window, SAVE_SETTINGS as i32));
     }
     unsafe fn settings_controls(&mut self, hwnd: HWND) {
@@ -4130,7 +4316,7 @@ impl App {
         let mut client: RECT = zeroed();
         GetClientRect(hwnd, &mut client);
         let available = ((client.bottom - client.top) as f32 / scale) as i32;
-        let list_height = (110 - ((610 - available).max(0) + 1) / 2).max(54);
+        let list_height = (110 - ((680 - available).max(0) + 1) / 2).max(54);
         let shift = 110 - list_height;
         let s = |v: i32| (v as f32 * scale).round() as i32;
         let place = |child, x, y, width, height| {
@@ -4280,6 +4466,33 @@ impl App {
             hwnd,
         );
         place(self.settings_error, 16, 496 - shift * 2, 530, 48);
+        self.auto_release = self.control(
+            "Button",
+            "시작할 때 새 버전 확인",
+            WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+            AUTO_RELEASE,
+            hwnd,
+        );
+        SetWindowTheme(self.auto_release, wide("").as_ptr(), wide("").as_ptr());
+        SendMessageW(
+            self.auto_release,
+            BM_SETCHECK,
+            self.settings.check_updates_on_startup as usize,
+            0,
+        );
+        place(self.auto_release, 16, 548 - shift * 2, 530, 28);
+        let version = self.control("Static", &self.release_text, 0, RELEASE_STATUS, hwnd);
+        place(version, 16, 586 - shift * 2, 305, 28);
+        let check = self.control(
+            "Button",
+            "업데이트 확인",
+            WS_TABSTOP | BS_OWNERDRAW as u32,
+            CHECK_RELEASE,
+            hwnd,
+        );
+        place(check, 330, 582 - shift * 2, 216, 32);
+        // WM_CREATE runs before settings_window receives CreateWindowEx's return.
+        EnableWindow(check, (!self.release_busy) as i32);
         let save = self.control(
             "Button",
             "저장",
@@ -4287,7 +4500,7 @@ impl App {
             SAVE_SETTINGS,
             hwnd,
         );
-        place(save, 446, 560 - shift * 2, 100, 30);
+        place(save, 446, 630 - shift * 2, 100, 30);
     }
     unsafe fn folder_paths(&self, list: HWND) -> Vec<PathBuf> {
         let count = SendMessageW(list, LB_GETCOUNT, 0, 0).max(0) as usize;
@@ -4440,6 +4653,8 @@ impl App {
         self.settings.hotkey = hotkey;
         self.settings.font_size = font;
         self.settings.fast_index = SendMessageW(self.auto_fast, BM_GETCHECK, 0, 0) != 0;
+        self.settings.check_updates_on_startup =
+            SendMessageW(self.auto_release, BM_GETCHECK, 0, 0) != 0;
         self.remember_geometry();
         if let Err(error) = self.settings.save() {
             SetWindowTextW(self.settings_error, wide(&error).as_ptr());
@@ -4788,6 +5003,10 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, w: WPARAM, l: 
         }
         WM_COMMAND if w & 0xffff == SAVE_SETTINGS => {
             app.apply_settings();
+            0
+        }
+        WM_COMMAND if w & 0xffff == CHECK_RELEASE => {
+            app.check_release(true);
             0
         }
         WM_COMMAND if w & 0xffff == ADD_ROOT => {

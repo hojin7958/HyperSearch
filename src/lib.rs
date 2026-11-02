@@ -11,3 +11,4 @@ pub mod ntfs;
 pub mod platform;
 pub mod settings;
 pub mod shell_menu;
+pub mod updater;

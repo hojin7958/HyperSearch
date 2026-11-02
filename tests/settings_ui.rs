@@ -128,15 +128,29 @@ fn settings_save_exclusions_filter_cached_rows_and_preserve_cancelled_removal() 
     assert!(!dialog.is_null());
     let excluded_list = unsafe { GetDlgItem(dialog, 220) };
     let roots_list = unsafe { GetDlgItem(dialog, 202) };
+    let auto_release = unsafe { GetDlgItem(dialog, 224) };
+    assert_eq!(unsafe { SendMessageW(auto_release, BM_GETCHECK, 0, 0) }, 1);
+    assert!(text(unsafe { GetDlgItem(dialog, 225) }).contains(quickfind::updater::VERSION));
+    let release_button = unsafe { GetDlgItem(dialog, 230) };
+    assert_eq!(text(release_button), "업데이트 확인");
+    let mut class = [0u16; 64];
+    let count = unsafe { GetClassNameW(release_button, class.as_mut_ptr(), class.len() as i32) };
+    assert_eq!(String::from_utf16_lossy(&class[..count as usize]), "Button");
+    assert_eq!(
+        text(unsafe { GetDlgItem(dialog, 223) }),
+        "제외 폴더 (하위 항목 포함)"
+    );
     assert_eq!(unsafe { SendMessageW(excluded_list, LB_GETCOUNT, 0, 0) }, 0);
     let mut roots_rect: RECT = unsafe { std::mem::zeroed() };
     let mut excluded_rect: RECT = unsafe { std::mem::zeroed() };
     let mut save_rect: RECT = unsafe { std::mem::zeroed() };
     let mut client: RECT = unsafe { std::mem::zeroed() };
+    let mut update_rect: RECT = unsafe { std::mem::zeroed() };
     unsafe {
         GetWindowRect(roots_list, &mut roots_rect);
         GetWindowRect(excluded_list, &mut excluded_rect);
         GetWindowRect(GetDlgItem(dialog, 200), &mut save_rect);
+        GetWindowRect(release_button, &mut update_rect);
         GetClientRect(dialog, &mut client);
         MapWindowPoints(
             dialog,
@@ -147,8 +161,10 @@ fn settings_save_exclusions_filter_cached_rows_and_preserve_cancelled_removal() 
     }
     assert!(roots_rect.bottom <= excluded_rect.top);
     assert!(save_rect.bottom <= client.bottom && save_rect.right <= client.right);
+    assert!(update_rect.bottom <= save_rect.top && update_rect.right <= client.right);
     let path = wide(&excluded.to_string_lossy());
     unsafe {
+        SendMessageW(auto_release, BM_SETCHECK, 0, 0);
         SendMessageW(excluded_list, LB_ADDSTRING, 0, path.as_ptr() as isize);
         SendMessageW(dialog, WM_COMMAND, 200, 0);
     }
@@ -158,6 +174,7 @@ fn settings_save_exclusions_filter_cached_rows_and_preserve_cancelled_removal() 
         serde_json::from_slice(&std::fs::read(data.join("settings.json")).unwrap()).unwrap();
     assert_eq!(saved.excluded_folders, [excluded.clone()]);
     assert_eq!(saved.font_size, 9.0);
+    assert!(!saved.check_updates_on_startup);
     let cached = cache::load_with_exclusions(
         &data.join("index.bin"),
         &[root.clone()],
