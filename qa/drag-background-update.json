@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-10-28T16:36:33.9436061+09:00",
+  "release_library_tests_passed": 86,
+  "default_library_tests_ignored": 2,
+  "optional_drag_preparation_benchmark_passed": true,
+  "displayed_selection_can_be_prepared_during_indexing_and_updates": true,
+  "publication_waits_for_drag_to_finish_verified": true,
+  "concurrent_file_operation_remains_blocked_verified": true,
+  "shell_copy_and_move_content_and_unicode_paths_verified": true,
+  "indexed_single_file_preparation_ms": [
+    4.0318,
+    0.0619,
+    0.0576,
+    0.040600000000000004,
+    0.0461
+  ],
+  "indexed_128_file_preparation_ms": [
+    1.7236,
+    1.9301,
+    1.4735
+  ],
+  "physical_mouse_explorer_drop_verified": false,
+  "personal_settings_directly_written_by_task": false,
+  "user_instance_restarted": true,
+  "scope": "Real native controls with a deliberately paused update, Shell IDataObject copy/move using private files, and preparation timings. No physical mouse-to-Explorer drop claim.",
+  "runtime_process_id": 46280,
+  "runtime_started_at": "2026-10-28T16:36:50.1268985+09:00",
+  "runtime_executable_sha256": "4E9E65F82886609F830A2FCAB1730124301B1897DBCF98A7C7458B6BD8126C58",
+  "personal_settings_sha256_unchanged": true
+}

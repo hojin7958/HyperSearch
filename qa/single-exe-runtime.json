@@ -1,0 +1,51 @@
+{
+  "product": "Hyperfinder",
+  "generated_at": "2026-10-16T11:00:33.3431250+09:00",
+  "tests_passed": 68,
+  "tests_ignored": 1,
+  "standalone_copy_and_rename_test_passed": true,
+  "worker_bypasses_gui_mutex": true,
+  "manifest_execution_level": "asInvoker",
+  "default_font_pt": 9,
+  "font_checks": [
+    {
+      "case": "new-settings",
+      "expected_font_pt": 9.0,
+      "saved_font_pt": 9.0,
+      "responding": true,
+      "exit_code": 0
+    },
+    {
+      "case": "saved-settings",
+      "expected_font_pt": 13.0,
+      "saved_font_pt": 13.0,
+      "responding": true,
+      "exit_code": 0
+    }
+  ],
+  "personal_settings_unchanged": true,
+  "separate_helper_exists": false,
+  "live_index_status": {
+    "report": {
+      "changed_records": 4562,
+      "elapsed_ms": 4101,
+      "entries": 2827462,
+      "hydrated_records": 5,
+      "rebuilt_volumes": 0,
+      "replayed_volumes": 1,
+      "source": "NTFS MFT + USN",
+      "timings": {
+        "build_ms": 2350.1599,
+        "cache_save_ms": 239.1973,
+        "hydrate_ms": 498.0385,
+        "load_ms": 186.6649,
+        "replay_ms": 643.4174,
+        "sidecar_save_ms": 179.4954
+      }
+    },
+    "state": "complete"
+  },
+  "main_process_id": 37208,
+  "main_responding": true,
+  "gui_visual_verified": false
+}

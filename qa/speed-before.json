@@ -1,0 +1,116 @@
+{
+  "generated_at": "2026-10-15T19:21:55.198071700+09:00",
+  "source": "local_filesystem_cache",
+  "roots": [
+    "C:\\"
+  ],
+  "entries": 2816242,
+  "folders": 438336,
+  "skipped_directories": 21264,
+  "scan_ms": 3155,
+  "engine_prepare_ms": 0.0049,
+  "cache_save_ms": 297.2604,
+  "cache_load_ms": 228.62660000000002,
+  "cache_bytes": 132247085,
+  "index_allocated_mib": 126.12058067321777,
+  "working_set_mib": 147.21875,
+  "peak_working_set_mib": 258.7109375,
+  "queries": [
+    {
+      "query": "report",
+      "mode": "Plain",
+      "match_path": false,
+      "matches": 3578,
+      "cold_ms": 41.2365,
+      "median_ms": 40.04,
+      "p95_ms": 42.3158
+    },
+    {
+      "query": "보고서",
+      "mode": "Plain",
+      "match_path": false,
+      "matches": 5,
+      "cold_ms": 29.5798,
+      "median_ms": 29.4772,
+      "p95_ms": 31.0188
+    },
+    {
+      "query": "*.pdf",
+      "mode": "Wildcard",
+      "match_path": false,
+      "matches": 2460,
+      "cold_ms": 48.5691,
+      "median_ms": 43.7552,
+      "p95_ms": 46.9037
+    },
+    {
+      "query": "*test*",
+      "mode": "Wildcard",
+      "match_path": false,
+      "matches": 106438,
+      "cold_ms": 517.2122,
+      "median_ms": 46.1832,
+      "p95_ms": 56.0222
+    },
+    {
+      "query": "\\.(pdf|xlsx|docx)$",
+      "mode": "Regex",
+      "match_path": false,
+      "matches": 5201,
+      "cold_ms": 34.7338,
+      "median_ms": 34.5904,
+      "p95_ms": 38.4694
+    },
+    {
+      "query": "\\windows\\system32\\",
+      "mode": "Plain",
+      "match_path": true,
+      "matches": 30470,
+      "cold_ms": 196.5074,
+      "median_ms": 179.59120000000001,
+      "p95_ms": 214.4307
+    },
+    {
+      "query": "*\\system32\\*.dll",
+      "mode": "Wildcard",
+      "match_path": true,
+      "matches": 4457,
+      "cold_ms": 170.6235,
+      "median_ms": 188.3365,
+      "p95_ms": 315.59340000000003
+    }
+  ],
+  "sorts": [
+    {
+      "field": "Name",
+      "matches": 2816242,
+      "cold_ms": 1236.9504,
+      "warm_ms": 5.5409
+    },
+    {
+      "field": "Path",
+      "matches": 2816242,
+      "cold_ms": 947.017,
+      "warm_ms": 3.9528999999999996
+    },
+    {
+      "field": "Size",
+      "matches": 2816242,
+      "cold_ms": 676.4957,
+      "warm_ms": 4.531000000000001
+    },
+    {
+      "field": "Created",
+      "matches": 2816242,
+      "cold_ms": 503.37960000000004,
+      "warm_ms": 3.4561
+    },
+    {
+      "field": "Modified",
+      "matches": 2816242,
+      "cold_ms": 609.1024,
+      "warm_ms": 5.042
+    }
+  ],
+  "ntfs_probe": null
+}

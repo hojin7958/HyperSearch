@@ -1,0 +1,7 @@
+/.tools/
+/target/
+/dist/
+/_workspace/
+/qa/private-*/
+*.tmp
+

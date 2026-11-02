@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T14:57:17.0376510+09:00",
+  "tests_passed": 91,
+  "default_tests_ignored": 3,
+  "baseline": {
+    "baseline_exe_sha256": "445EA3A21F0AF5A70D9F8AEB0E4E106263D7AE51BE332E8C9990991B60FE9B1C",
+    "sampled_seconds": 74.9520465,
+    "before_accessibility_read_cpu_seconds": 3.1875,
+    "during_accessibility_read_cpu_seconds": 29.859375,
+    "during_accessibility_read_seconds": 32.74350509999999,
+    "normal_message_loop_samples_before": 179,
+    "normal_message_loop_samples_during": 0,
+    "during_samples": 151,
+    "interpretation": "Existing user binary, saved query, automatic USN sync enabled. UIA inspection began about 42 seconds after launch. Stack-word samples show UIAutomationCore and ListView subclass calls; this is not a complete unwound CPU profile. No paths or query text are included."
+  },
+  "large_fixture_cached_rows": 3000000,
+  "large_fixture_exposed_elements": 37,
+  "large_fixture_uia_subtree_ms": 12.84,
+  "offscreen_find_realize_selection_focus_scroll_and_stale_identity_verified": true,
+  "search_results_not_truncated": true,
+  "personal_settings_directly_written_by_task": false,
+  "user_instance_restarted": false,
+  "scope": "UIA subtree enumeration and native-control regressions, including a synthetic three-million-row cache. Subtree timings are not total application startup or cold-disk timings. Live verification is appended after restart."
+}

@@ -1,0 +1,106 @@
+{
+  "generated_at": "2026-10-15T20:07:32.614861+09:00",
+  "scope": "Frozen NTFS sidecar IO only; not total refresh duration",
+  "nodes": 2837727,
+  "bytes": 196086655,
+  "runs": 3,
+  "before": [
+    {
+      "nodes": 2837727,
+      "snapshot_load_ms": 224.32260000000002,
+      "snapshot_save_ms": 446.8711
+    },
+    {
+      "nodes": 2837727,
+      "snapshot_load_ms": 210.03810000000001,
+      "snapshot_save_ms": 372.882
+    },
+    {
+      "nodes": 2837727,
+      "snapshot_load_ms": 211.12030000000001,
+      "snapshot_save_ms": 400.4492
+    }
+  ],
+  "after": [
+    {
+      "nodes": 2837727,
+      "snapshot_load_ms": 184.0657,
+      "snapshot_save_ms": 155.60150000000002
+    },
+    {
+      "nodes": 2837727,
+      "snapshot_load_ms": 180.43380000000002,
+      "snapshot_save_ms": 183.5495
+    },
+    {
+      "nodes": 2837727,
+      "snapshot_load_ms": 175.6797,
+      "snapshot_save_ms": 155.6696
+    }
+  ],
+  "median_before_load_ms": 211.12030000000001,
+  "median_after_load_ms": 180.43380000000002,
+  "median_before_save_ms": 400.4492,
+  "median_after_save_ms": 155.6696,
+  "gui_duplicate_cache_save_removed": true,
+  "index_build": {
+    "scope": "Whole C volume index construction from the same frozen NTFS snapshot; not total refresh duration",
+    "runs": 3,
+    "before": [
+      {
+        "build_ms": 2777.8074,
+        "entries": 2816451,
+        "index_allocated_bytes": 132257802,
+        "nodes": 2837727,
+        "snapshot_load_ms": 222.6302,
+        "snapshot_save_ms": 183.1555
+      },
+      {
+        "build_ms": 3006.2102999999997,
+        "entries": 2816451,
+        "index_allocated_bytes": 132257802,
+        "nodes": 2837727,
+        "snapshot_load_ms": 212.63000000000002,
+        "snapshot_save_ms": 168.17419999999998
+      },
+      {
+        "build_ms": 2919.9744,
+        "entries": 2816451,
+        "index_allocated_bytes": 132257802,
+        "nodes": 2837727,
+        "snapshot_load_ms": 233.0868,
+        "snapshot_save_ms": 167.9931
+      }
+    ],
+    "after": [
+      {
+        "build_ms": 1723.8801,
+        "entries": 2816451,
+        "index_allocated_bytes": 132257802,
+        "nodes": 2837727,
+        "snapshot_load_ms": 185.6467,
+        "snapshot_save_ms": 165.1085
+      },
+      {
+        "build_ms": 1753.339,
+        "entries": 2816451,
+        "index_allocated_bytes": 132257802,
+        "nodes": 2837727,
+        "snapshot_load_ms": 185.3411,
+        "snapshot_save_ms": 162.6294
+      },
+      {
+        "build_ms": 1739.8077999999998,
+        "entries": 2816451,
+        "index_allocated_bytes": 132257802,
+        "nodes": 2837727,
+        "snapshot_load_ms": 189.6034,
+        "snapshot_save_ms": 159.7076
+      }
+    ],
+    "median_before_build_ms": 2919.9744,
+    "median_after_build_ms": 1739.8077999999998,
+    "entry_count_equal": true,
+    "allocated_bytes_equal": true
+  }
+}

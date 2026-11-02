@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-10-15T16:17:04.083646300+09:00",
+  "source": "local_filesystem_cache",
+  "roots": [
+    "C:\\"
+  ],
+  "entries": 2743916,
+  "folders": 426279,
+  "skipped_directories": 517,
+  "scan_ms": 123441,
+  "engine_prepare_ms": 0.005,
+  "cache_save_ms": 214.9616,
+  "cache_load_ms": 160.0637,
+  "cache_bytes": 128484485,
+  "index_allocated_mib": 122.53228569030762,
+  "working_set_mib": 142.26171875,
+  "peak_working_set_mib": 252.41796875,
+  "queries": [
+    {
+      "query": "report",
+      "mode": "Plain",
+      "matches": 3117,
+      "cold_ms": 36.4523,
+      "median_ms": 31.156799999999997,
+      "p95_ms": 33.6544
+    },
+    {
+      "query": "보고서",
+      "mode": "Plain",
+      "matches": 5,
+      "cold_ms": 22.7471,
+      "median_ms": 22.4403,
+      "p95_ms": 27.883399999999998
+    },
+    {
+      "query": "*.pdf",
+      "mode": "Wildcard",
+      "matches": 2445,
+      "cold_ms": 39.0661,
+      "median_ms": 39.3645,
+      "p95_ms": 47.403800000000004
+    },
+    {
+      "query": "*test*",
+      "mode": "Wildcard",
+      "matches": 104651,
+      "cold_ms": 518.6051,
+      "median_ms": 38.5014,
+      "p95_ms": 45.5809
+    },
+    {
+      "query": "\\.(pdf|xlsx|docx)$",
+      "mode": "Regex",
+      "matches": 5182,
+      "cold_ms": 34.970099999999995,
+      "median_ms": 32.9651,
+      "p95_ms": 34.791500000000006
+    }
+  ],
+  "sorts": [
+    {
+      "field": "Name",
+      "matches": 2743916,
+      "cold_ms": 907.1274000000001,
+      "warm_ms": 4.4510000000000005
+    },
+    {
+      "field": "Path",
+      "matches": 2743916,
+      "cold_ms": 649.9625,
+      "warm_ms": 4.0735
+    },
+    {
+      "field": "Size",
+      "matches": 2743916,
+      "cold_ms": 620.6873,
+      "warm_ms": 3.5814000000000004
+    },
+    {
+      "field": "Created",
+      "matches": 2743916,
+      "cold_ms": 501.49129999999997,
+      "warm_ms": 4.3484
+    },
+    {
+      "field": "Modified",
+      "matches": 2743916,
+      "cold_ms": 523.9852000000001,
+      "warm_ms": 3.7738
+    }
+  ],
+  "ntfs_probe": null
+}

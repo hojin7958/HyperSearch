@@ -1,0 +1,13 @@
+mod accessibility;
+pub mod cache;
+pub mod engine;
+pub mod exclusions;
+pub mod file_clipboard;
+pub mod highlight;
+pub mod indexer;
+pub mod model;
+pub mod native_app;
+pub mod ntfs;
+pub mod platform;
+pub mod settings;
+pub mod shell_menu;

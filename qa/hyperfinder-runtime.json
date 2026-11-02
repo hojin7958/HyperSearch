@@ -1,0 +1,13 @@
+{
+  "product": "Hyperfinder",
+  "generated_at": "2026-10-16T10:31:35.669781+09:00",
+  "tests_passed": 67,
+  "tests_ignored": 1,
+  "settings_preserved": true,
+  "responding": true,
+  "window_title": "",
+  "toolbar_rows": 1,
+  "toolbar_visual_verified": false,
+  "visual_note": "Read-only screenshot was occluded by another window. No keyboard or mouse input sent.",
+  "startup_window_title": "Hyperfinder"
+}

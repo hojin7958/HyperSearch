@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-10-28T10:55:27.2057476+09:00",
+  "tests_passed": 90,
+  "tests_ignored": 3,
+  "hidden_storm_actual_created_files": 8000,
+  "hidden_storm_max_wm_null_ms": 2.06,
+  "large_fixture_synthetic_cached_rows": 1000000,
+  "large_fixture_actual_storm_files": 8000,
+  "large_fixture_during_recovery_followup_files": 1,
+  "large_fixture_max_wm_null_ms": 0.69,
+  "large_fixture_input_to_result_row_ms": [
+    12.5505,
+    11.996,
+    10.771700000000001
+  ],
+  "large_fixture_scroll_probes": 1050,
+  "scoped_storm_kept_unchanged_cached_rows": true,
+  "during_recovery_followup_persisted": true,
+  "lower_background_priority_and_max_two_workers_verified": true,
+  "excluded_folders_and_unreadable_records_preserved_in_tests": true,
+  "personal_settings_sha256_unchanged": false,
+  "personal_settings_directly_written_by_task": false,
+  "settings_hash_comparison_note": "The resident instance remained active and the settings hash changed during work. Current settings were left in place without restoring or overwriting them.",
+  "user_instance_restarted": false,
+  "personal_full_drive_performance_verified": false,
+  "manual_mouse_and_full_visual_qa_verified": false,
+  "measurement_scope": "Private temporary fixtures and hidden native Win32 controls; row availability, not visible frame presentation."
+}

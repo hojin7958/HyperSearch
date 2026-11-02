@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-10-15T15:43:48.405011400+09:00",
+  "source": "local_filesystem",
+  "roots": [
+    "C:\\"
+  ],
+  "entries": 2743916,
+  "folders": 426279,
+  "skipped_directories": 517,
+  "scan_ms": 123441,
+  "engine_prepare_ms": 65.1201,
+  "cache_save_ms": 1162.6915,
+  "cache_load_ms": 665.4553,
+  "cache_bytes": 190500635,
+  "working_set_mib": 657.07421875,
+  "peak_working_set_mib": 736.0703125,
+  "queries": [
+    {
+      "query": "report",
+      "mode": "Plain",
+      "matches": 3117,
+      "cold_ms": 15.6072,
+      "median_ms": 13.346,
+      "p95_ms": 15.941600000000001
+    },
+    {
+      "query": "보고서",
+      "mode": "Plain",
+      "matches": 5,
+      "cold_ms": 14.1348,
+      "median_ms": 12.3253,
+      "p95_ms": 14.747100000000001
+    },
+    {
+      "query": "*.pdf",
+      "mode": "Wildcard",
+      "matches": 2445,
+      "cold_ms": 8.9791,
+      "median_ms": 9.0364,
+      "p95_ms": 10.5714
+    },
+    {
+      "query": "*test*",
+      "mode": "Wildcard",
+      "matches": 104651,
+      "cold_ms": 163.5754,
+      "median_ms": 150.7973,
+      "p95_ms": 186.6249
+    },
+    {
+      "query": "\\.(pdf|xlsx|docx)$",
+      "mode": "Regex",
+      "matches": 5182,
+      "cold_ms": 33.2922,
+      "median_ms": 34.102399999999996,
+      "p95_ms": 38.0959
+    }
+  ],
+  "sorts": [
+    {
+      "field": "Name",
+      "matches": 2743916,
+      "cold_ms": 770.1783,
+      "warm_ms": 20.8491
+    },
+    {
+      "field": "Path",
+      "matches": 2743916,
+      "cold_ms": 1004.8741000000001,
+      "warm_ms": 19.5493
+    },
+    {
+      "field": "Size",
+      "matches": 2743916,
+      "cold_ms": 477.9711,
+      "warm_ms": 22.1437
+    },
+    {
+      "field": "Created",
+      "matches": 2743916,
+      "cold_ms": 311.4546,
+      "warm_ms": 20.4493
+    },
+    {
+      "field": "Modified",
+      "matches": 2743916,
+      "cold_ms": 312.07669999999996,
+      "warm_ms": 22.217000000000002
+    }
+  ],
+  "ntfs_probe": {
+    "available": false,
+    "reason": "볼륨 열기 실패 (관리자 권한이 필요할 수 있음): 액세스가 거부되었습니다. (os error 5)"
+  }
+}

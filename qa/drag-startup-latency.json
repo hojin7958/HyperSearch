@@ -1,0 +1,35 @@
+{
+  "measured_at": "2026-10-26",
+  "scope": "Release build, private local fixture; drag IDataObject preparation only. Excludes mouse detection, OleInitialize, Shell drag image, Explorer target response and complete drop time.",
+  "baseline_first_file_ms": 186.32,
+  "indexed_first_file_ms": 6.1451,
+  "paired_legacy_first_file_ms": 192.1037,
+  "ole_initialize_ms": 12.8845,
+  "indexed_warm_single_file_ms": [
+    0.0568,
+    0.0488,
+    0.0493,
+    0.0518
+  ],
+  "legacy_warm_single_file_ms": [
+    10.8136,
+    8.49,
+    8.1194,
+    13.4416
+  ],
+  "files_per_batch": 128,
+  "indexed_batch_ms": [
+    2.3909,
+    2.1809,
+    3.5523
+  ],
+  "legacy_batch_ms": [
+    1035.5758,
+    994.5128,
+    948.5141
+  ],
+  "indexed_batch_median_ms": 2.3909,
+  "legacy_batch_median_ms": 994.5128,
+  "shell_copy_move_fixtures_passed": true,
+  "physical_mouse_explorer_drop_verified": false
+}

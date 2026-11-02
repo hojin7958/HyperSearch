@@ -1,0 +1,60 @@
+{
+  "generated_at": "2026-10-15T20:19:10.1080327+09:00",
+  "pid": 37320,
+  "samples": [
+    {
+      "sample": 1,
+      "responding": true,
+      "working_set_mib": 162.43,
+      "cpu_seconds": 5.438
+    },
+    {
+      "sample": 2,
+      "responding": true,
+      "working_set_mib": 162.41,
+      "cpu_seconds": 6.094
+    },
+    {
+      "sample": 3,
+      "responding": true,
+      "working_set_mib": 162.42,
+      "cpu_seconds": 6.875
+    }
+  ],
+  "settings_preserved": {
+    "roots": true,
+    "hotkey": true,
+    "font_size": true,
+    "query": true,
+    "column_widths": true,
+    "match_path": true,
+    "case_sensitive": true,
+    "mode": true,
+    "kind": true,
+    "sort": true,
+    "descending": true,
+    "fast_index": true
+  },
+  "index_status_fresh": true,
+  "index_status": {
+    "report": {
+      "changed_records": 10197,
+      "elapsed_ms": 2863,
+      "entries": 2824275,
+      "hydrated_records": 5,
+      "rebuilt_volumes": 0,
+      "replayed_volumes": 1,
+      "source": "NTFS MFT + USN",
+      "timings": {
+        "build_ms": 1560.5297,
+        "cache_save_ms": 245.2751,
+        "hydrate_ms": 354.66700000000003,
+        "load_ms": 190.7295,
+        "replay_ms": 336.4268,
+        "sidecar_save_ms": 172.2039
+      }
+    },
+    "state": "complete"
+  },
+  "actual_mouse_and_keyboard_ui_verified": false
+}

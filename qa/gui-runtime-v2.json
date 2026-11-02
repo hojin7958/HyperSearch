@@ -1,0 +1,422 @@
+{
+  "summary": {
+    "entries_after_fast_sync": 2816042,
+    "samples": 45,
+    "observed_ms": 133680,
+    "responding_failures": 0,
+    "last_working_set_mib": 169.95703125,
+    "last_private_commit_mib": 139.69921875,
+    "final_minute_working_set_min_mib": 169.8125,
+    "final_minute_working_set_max_mib": 170.0234375,
+    "peak_working_set_mib": 312.8984375,
+    "cpu_seconds": 24.46875,
+    "user_confirmed_no_flicker": true
+  },
+  "samples": [
+    {
+      "elapsed_ms": 211,
+      "working_set_mib": 181.75,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 3334,
+      "working_set_mib": 181.75,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 6353,
+      "working_set_mib": 181.75,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 9379,
+      "working_set_mib": 181.75,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 12397,
+      "working_set_mib": 181.75,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 15425,
+      "working_set_mib": 181.75390625,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 18450,
+      "working_set_mib": 181.75390625,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 21473,
+      "working_set_mib": 181.75390625,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 24500,
+      "working_set_mib": 181.75390625,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 27517,
+      "working_set_mib": 181.75390625,
+      "private_commit_mib": 154.703125,
+      "peak_working_set_mib": 181.75390625,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 27
+    },
+    {
+      "elapsed_ms": 30544,
+      "working_set_mib": 181.70703125,
+      "private_commit_mib": 154.65625,
+      "peak_working_set_mib": 181.7578125,
+      "cpu_seconds": 4.765625,
+      "responding": true,
+      "threads": 26
+    },
+    {
+      "elapsed_ms": 33569,
+      "working_set_mib": 184.4765625,
+      "private_commit_mib": 155.00390625,
+      "peak_working_set_mib": 184.4765625,
+      "cpu_seconds": 4.984375,
+      "responding": true,
+      "threads": 26
+    },
+    {
+      "elapsed_ms": 36841,
+      "working_set_mib": 201.91796875,
+      "private_commit_mib": 171.98046875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 13.65625,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 39880,
+      "working_set_mib": 169.94921875,
+      "private_commit_mib": 139.7578125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.015625,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 42919,
+      "working_set_mib": 169.94921875,
+      "private_commit_mib": 139.7578125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.015625,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 45947,
+      "working_set_mib": 169.94921875,
+      "private_commit_mib": 139.7578125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.015625,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 48973,
+      "working_set_mib": 169.94921875,
+      "private_commit_mib": 139.7578125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.015625,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 52001,
+      "working_set_mib": 169.94921875,
+      "private_commit_mib": 139.7578125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.015625,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 55025,
+      "working_set_mib": 169.95703125,
+      "private_commit_mib": 139.9140625,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.546875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 58046,
+      "working_set_mib": 169.95703125,
+      "private_commit_mib": 139.9140625,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.546875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 61073,
+      "working_set_mib": 169.8125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.546875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 64100,
+      "working_set_mib": 169.8125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.546875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 67125,
+      "working_set_mib": 169.8125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.546875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 70151,
+      "working_set_mib": 169.83203125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.859375,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 73174,
+      "working_set_mib": 169.83203125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.859375,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 76200,
+      "working_set_mib": 169.83203125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.859375,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 79227,
+      "working_set_mib": 169.83203125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.859375,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 82251,
+      "working_set_mib": 169.83203125,
+      "private_commit_mib": 139.5078125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 22.875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 85276,
+      "working_set_mib": 169.89453125,
+      "private_commit_mib": 139.625,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.1875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 88306,
+      "working_set_mib": 169.89453125,
+      "private_commit_mib": 139.625,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.1875,
+      "responding": true,
+      "threads": 25
+    },
+    {
+      "elapsed_ms": 91330,
+      "working_set_mib": 169.83984375,
+      "private_commit_mib": 139.53125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.1875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 94362,
+      "working_set_mib": 169.83984375,
+      "private_commit_mib": 139.53125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.1875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 97382,
+      "working_set_mib": 169.83984375,
+      "private_commit_mib": 139.53125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.203125,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 100405,
+      "working_set_mib": 169.984375,
+      "private_commit_mib": 139.8203125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.6875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 103431,
+      "working_set_mib": 169.984375,
+      "private_commit_mib": 139.8203125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.6875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 106453,
+      "working_set_mib": 169.984375,
+      "private_commit_mib": 139.8203125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.6875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 109479,
+      "working_set_mib": 169.984375,
+      "private_commit_mib": 139.8203125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.703125,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 112503,
+      "working_set_mib": 169.984375,
+      "private_commit_mib": 139.8203125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 23.703125,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 115531,
+      "working_set_mib": 170,
+      "private_commit_mib": 139.82421875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.171875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 118555,
+      "working_set_mib": 170,
+      "private_commit_mib": 139.82421875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.171875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 121579,
+      "working_set_mib": 170,
+      "private_commit_mib": 139.82421875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.171875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 124605,
+      "working_set_mib": 170,
+      "private_commit_mib": 139.82421875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.171875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 127630,
+      "working_set_mib": 170.00390625,
+      "private_commit_mib": 139.82421875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.171875,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 130657,
+      "working_set_mib": 170.0234375,
+      "private_commit_mib": 139.8203125,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.453125,
+      "responding": true,
+      "threads": 22
+    },
+    {
+      "elapsed_ms": 133680,
+      "working_set_mib": 169.95703125,
+      "private_commit_mib": 139.69921875,
+      "peak_working_set_mib": 312.8984375,
+      "cpu_seconds": 24.46875,
+      "responding": true,
+      "threads": 18
+    }
+  ]
+}

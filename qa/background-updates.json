@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-19",
+  "suite": "cargo test --release -j1 -- --test-threads=1 --nocapture",
+  "passed": 79,
+  "ignored": 1,
+  "library_passed": 76,
+  "integration_passed": 3,
+  "hidden_overflow_created_files": 8000,
+  "first_run_max_WM_NULL_ms": 1.59,
+  "continued_hidden_updates": true,
+  "search": true,
+  "cache_persistence": true,
+  "manual_mouse_verification": false,
+  "personal_drive_full_rescan_benchmark": false,
+  "user_instance_restarted": false,
+  "executable_sha256": "A934F34BFB93B36D21A8CE16D1B1543B6776AF9841F1F84EDF445510728B8EB8",
+  "repeat_run_max_WM_NULL_ms_including_generation": 2.3,
+  "background_repeat_passed": true,
+  "final_release_build_passed": true,
+  "zip_single_executable_hash_verified": true,
+  "personal_settings_hash_unchanged": true
+}

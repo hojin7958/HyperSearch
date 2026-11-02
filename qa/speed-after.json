@@ -1,0 +1,174 @@
+{
+  "generated_at": "2026-10-15T19:28:09.409437100+09:00",
+  "source": "local_filesystem_cache",
+  "roots": [
+    "C:\\"
+  ],
+  "entries": 2816242,
+  "folders": 438336,
+  "skipped_directories": 21264,
+  "scan_ms": 3155,
+  "engine_prepare_ms": 0.0125,
+  "cache_save_ms": 242.8506,
+  "cache_load_ms": 180.5141,
+  "cache_bytes": 132247085,
+  "index_allocated_mib": 126.12058067321777,
+  "working_set_mib": 149.47265625,
+  "peak_working_set_mib": 258.69921875,
+  "queries": [
+    {
+      "query": "report",
+      "mode": "Plain",
+      "match_path": false,
+      "matches": 3578,
+      "cold_ms": 22.0734,
+      "median_ms": 20.028399999999998,
+      "p95_ms": 21.227200000000003
+    },
+    {
+      "query": "보고서",
+      "mode": "Plain",
+      "match_path": false,
+      "matches": 5,
+      "cold_ms": 11.8336,
+      "median_ms": 11.5947,
+      "p95_ms": 11.8097
+    },
+    {
+      "query": "*.pdf",
+      "mode": "Wildcard",
+      "match_path": false,
+      "matches": 2460,
+      "cold_ms": 22.0105,
+      "median_ms": 20.908900000000003,
+      "p95_ms": 21.485500000000002
+    },
+    {
+      "query": "*test*",
+      "mode": "Wildcard",
+      "match_path": false,
+      "matches": 106438,
+      "cold_ms": 460.4275,
+      "median_ms": 21.4653,
+      "p95_ms": 23.1952
+    },
+    {
+      "query": "\\.(pdf|xlsx|docx)$",
+      "mode": "Regex",
+      "match_path": false,
+      "matches": 5201,
+      "cold_ms": 15.2833,
+      "median_ms": 14.6897,
+      "p95_ms": 14.7825
+    },
+    {
+      "query": "\\windows\\system32\\",
+      "mode": "Plain",
+      "match_path": true,
+      "matches": 30470,
+      "cold_ms": 76.5763,
+      "median_ms": 78.88430000000001,
+      "p95_ms": 84.6683
+    },
+    {
+      "query": "*\\system32\\*.dll",
+      "mode": "Wildcard",
+      "match_path": true,
+      "matches": 4457,
+      "cold_ms": 76.1622,
+      "median_ms": 90.3604,
+      "p95_ms": 114.7439
+    }
+  ],
+  "sorts": [
+    {
+      "field": "Name",
+      "matches": 2816242,
+      "cold_ms": 763.1962,
+      "warm_ms": 3.2688
+    },
+    {
+      "field": "Path",
+      "matches": 2816242,
+      "cold_ms": 704.0917,
+      "warm_ms": 3.3745
+    },
+    {
+      "field": "Size",
+      "matches": 2816242,
+      "cold_ms": 576.3207,
+      "warm_ms": 2.8672
+    },
+    {
+      "field": "Created",
+      "matches": 2816242,
+      "cold_ms": 448.1499,
+      "warm_ms": 3.0414
+    },
+    {
+      "field": "Modified",
+      "matches": 2816242,
+      "cold_ms": 484.75600000000003,
+      "warm_ms": 2.8739999999999997
+    }
+  ],
+  "typing": [
+    {
+      "query": "보",
+      "matches": 1266,
+      "full_scan_median_ms": 13.9413,
+      "session_median_ms": 13.3734,
+      "scanned_rows": 2816242
+    },
+    {
+      "query": "보고",
+      "matches": 13,
+      "full_scan_median_ms": 13.005299999999998,
+      "session_median_ms": 0.2364,
+      "scanned_rows": 1266
+    },
+    {
+      "query": "보고서",
+      "matches": 5,
+      "full_scan_median_ms": 12.1513,
+      "session_median_ms": 0.028900000000000002,
+      "scanned_rows": 13
+    },
+    {
+      "query": "r",
+      "matches": 1347157,
+      "full_scan_median_ms": 20.705000000000002,
+      "session_median_ms": 20.9577,
+      "scanned_rows": 2816242
+    },
+    {
+      "query": "re",
+      "matches": 323456,
+      "full_scan_median_ms": 20.464799999999997,
+      "session_median_ms": 19.8765,
+      "scanned_rows": 2816242
+    },
+    {
+      "query": "rep",
+      "matches": 13210,
+      "full_scan_median_ms": 17.886599999999998,
+      "session_median_ms": 17.2323,
+      "scanned_rows": 2816242
+    },
+    {
+      "query": "repo",
+      "matches": 6518,
+      "full_scan_median_ms": 19.325499999999998,
+      "session_median_ms": 2.1456,
+      "scanned_rows": 13210
+    },
+    {
+      "query": "report",
+      "matches": 3578,
+      "full_scan_median_ms": 21.4844,
+      "session_median_ms": 1.1535,
+      "scanned_rows": 6518
+    }
+  ],
+  "ntfs_probe": null
+}

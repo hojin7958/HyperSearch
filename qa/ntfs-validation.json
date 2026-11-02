@@ -1,0 +1,73 @@
+{
+  "full_scan": {
+    "entries": 2815906,
+    "elapsed_ms": 13925,
+    "hydrated_records": 5,
+    "rebuilt_volumes": 1,
+    "replayed_volumes": 0
+  },
+  "latest_usn_replay": {
+    "changed_records": 3208,
+    "elapsed_ms": 7771,
+    "entries": 2815958,
+    "hydrated_records": 5,
+    "rebuilt_volumes": 0,
+    "replayed_volumes": 1,
+    "source": "NTFS MFT + USN"
+  },
+  "initial_full_scan_comparison": {
+    "old_entries": 2743916,
+    "new_entries": 2815906,
+    "old_skipped": 517,
+    "new_skipped": 21264,
+    "common": 2743735,
+    "old_only": 181,
+    "new_only": 72171,
+    "new_duplicate_hashes": 0,
+    "common_size_differences": 400,
+    "common_created_differences": 62,
+    "common_modified_differences": 1033,
+    "missing_sampled": 181,
+    "missing_still_exist": 2,
+    "missing_gone": 179,
+    "missing_inaccessible": 0,
+    "fixture_items": 8,
+    "fixture_missing": 0,
+    "fixture_metadata_differences": 0
+  },
+  "usn_fixture_comparison": {
+    "old_entries": 2815906,
+    "new_entries": 2815958,
+    "old_skipped": 21264,
+    "new_skipped": 21264,
+    "common": 2815750,
+    "old_only": 156,
+    "new_only": 208,
+    "new_duplicate_hashes": 0,
+    "common_size_differences": 145,
+    "common_created_differences": 29,
+    "common_modified_differences": 370,
+    "missing_sampled": 156,
+    "missing_still_exist": 2,
+    "missing_gone": 154,
+    "missing_inaccessible": 0,
+    "fixture_items": 9,
+    "fixture_missing": 0,
+    "fixture_metadata_differences": 0,
+    "fixture_stale_entries": 0
+  },
+  "notes": [
+    "Old-only full-scan paths: 179 removed, 2 database sidecars recreated after scan started.",
+    "Live filesystem comparisons are not a frozen snapshot.",
+    "USN fixture tests cover create, modify, rename, delete and parent directory timestamps."
+  ],
+  "installed_application_replay": {
+    "changed_records": 2762,
+    "elapsed_ms": 4060,
+    "entries": 2816042,
+    "hydrated_records": 5,
+    "rebuilt_volumes": 0,
+    "replayed_volumes": 1,
+    "source": "NTFS MFT + USN"
+  }
+}
