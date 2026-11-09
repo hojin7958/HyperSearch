@@ -54,6 +54,7 @@ const CACHE_TIMER: usize = 3;
 const STARTUP_SYNC_TIMER: usize = 4;
 const ACCESSIBILITY_TIMER: usize = 5;
 const RELEASE_TIMER: usize = 6;
+const RESIDENT_TIMER: usize = 7;
 const QUERY: usize = 100;
 const REGEX: usize = 101;
 const PATH: usize = 102;
@@ -77,6 +78,7 @@ const REMOVE_EXCLUDED: usize = 222;
 const CHECK_RELEASE: usize = 230;
 const AUTO_RELEASE: usize = 224;
 const RELEASE_STATUS: usize = 225;
+const INSTALL_INDEXER: usize = 231;
 const BG: u32 = 0x00201c19;
 const INPUT_BG: u32 = 0x002b2622;
 const FG: u32 = 0x00eee9e6;
@@ -95,6 +97,17 @@ fn normalized(path: &Path) -> String {
 }
 
 enum AppEvent {
+    ResidentWaiting {
+        generation: u64,
+    },
+    ResidentLoaded {
+        generation: u64,
+        checkpoint: u128,
+        request_id: u128,
+        delta_stamp: Option<std::time::SystemTime>,
+        result: Result<Arc<SearchEngine>, String>,
+    },
+    ResidentInstalled(Result<(), String>),
     Ready {
         generation: u64,
         engine: Arc<SearchEngine>,
@@ -919,6 +932,13 @@ struct App {
     startup_sync_pending: bool,
     prepared_update: Option<Box<PreparedUpdate>>,
     full_recovery: bool,
+    recovery_label: &'static str,
+    resident_active: bool,
+    resident_checkpoint: u128,
+    resident_loading: bool,
+    resident_request_at: Instant,
+    resident_request_barrier: u128,
+    resident_delta_stamp: Option<std::time::SystemTime>,
     rows: Arc<Vec<u32>>,
     accessibility: Option<crate::accessibility::Accessibility>,
     accessibility_epoch: u64,
@@ -1058,6 +1078,13 @@ pub fn run(settings: Settings) -> Result<(), String> {
             startup_sync_pending: false,
             prepared_update: None,
             full_recovery: false,
+            recovery_label: "변경분 반영 중",
+            resident_active: false,
+            resident_checkpoint: 0,
+            resident_loading: false,
+            resident_request_at: Instant::now() - Duration::from_secs(20),
+            resident_request_barrier: 0,
+            resident_delta_stamp: None,
             rows: Arc::new(Vec::new()),
             accessibility: None,
             accessibility_epoch: 0,
@@ -1321,6 +1348,10 @@ unsafe extern "system" fn main_proc(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
                     }
                 }
                 RELEASE_TIMER if app.settings.check_updates_on_startup => app.check_release(false),
+                RESIDENT_TIMER => {
+                    app.poll_resident();
+                    SetTimer(hwnd, RESIDENT_TIMER, 2000, None);
+                }
                 STARTUP_SYNC_TIMER if app.settings.fast_index => {
                     if app.indexing
                         || app.updating
@@ -1916,6 +1947,7 @@ impl App {
             SetTimer(self.hwnd, RELEASE_TIMER, 5000, None);
         }
         self.start_scan(true, false);
+        SetTimer(self.hwnd, RESIDENT_TIMER, 2000, None);
         self.update_status();
     }
     unsafe fn start_scan(&mut self, use_cache: bool, rebuild: bool) {
@@ -1925,6 +1957,23 @@ impl App {
         self.start_scan_mode(use_cache, rebuild, false);
     }
     unsafe fn start_scan_mode(&mut self, use_cache: bool, rebuild: bool, background: bool) {
+        if !use_cache && (self.resident_active || crate::resident::configured()) {
+            self.resident_active = true;
+            match crate::resident::request(rebuild) {
+                Ok(_) => {
+                    self.notice = if rebuild {
+                        "백그라운드 전체 재색인을 요청했습니다."
+                    } else {
+                        "백그라운드 변경분 반영을 요청했습니다."
+                    }
+                    .into();
+                }
+                Err(error) => self.notice = error,
+            }
+            self.poll_resident();
+            self.update_status();
+            return;
+        }
         if self.updating || self.file_operation_in_progress {
             self.refresh_after_operation =
                 Some(self.refresh_after_operation.unwrap_or(false) || rebuild);
@@ -1983,6 +2032,37 @@ impl App {
                     return;
                 }
                 if use_cache && flush_cache_before_fast(&cache_writer, &cancel).is_ok() {
+                    if crate::resident::configured() {
+                        let service_index = crate::resident::manifest()
+                            .filter(|(_, m)| m.matches(&roots, &excluded_folders))
+                            .and_then(|(directory, m)| {
+                                crate::resident::load_view(&directory, &m, None)
+                                    .ok()
+                                    .map(|view| (m.content_checkpoint(), view))
+                            });
+                        if let Some((checkpoint, view)) = service_index {
+                            tx.send(AppEvent::ResidentLoaded {
+                                generation,
+                                checkpoint,
+                                request_id: view.request_id,
+                                delta_stamp: view.delta_stamp,
+                                result: Ok(Arc::new(SearchEngine::new(Arc::new(view.index)))),
+                            });
+                            return;
+                        }
+                        if let Ok(mut index) = cache::load(&cache_path(), &roots) {
+                            crate::exclusions::FolderExclusions::new(&excluded_folders)
+                                .apply(&mut index);
+                            tx.send(AppEvent::Ready {
+                                generation,
+                                engine: Arc::new(SearchEngine::new(Arc::new(index))),
+                                cached: false,
+                            });
+                        } else {
+                            tx.send(AppEvent::ResidentWaiting { generation });
+                        }
+                        return;
+                    }
                     if let Ok(index) =
                         cache::load_with_exclusions(&cache_path(), &roots, &excluded_folders)
                     {
@@ -2027,6 +2107,12 @@ impl App {
         self.update_status();
     }
     unsafe fn configure_watcher(&mut self) {
+        if self.resident_active || crate::resident::configured() {
+            self.resident_active = true;
+            self.watcher.take();
+            self.pending.reset();
+            return;
+        }
         let previous = self.watcher.take();
         let pending = self.pending.clone();
         let hwnd = self.hwnd as isize;
@@ -2324,6 +2410,10 @@ impl App {
         self.notice = notice;
     }
     unsafe fn schedule_startup_sync(&mut self) {
+        if self.resident_active || crate::resident::configured() {
+            self.startup_sync_pending = false;
+            return;
+        }
         if self.startup_sync_pending {
             self.startup_sync_pending = false;
             if self.settings.fast_index {
@@ -2345,7 +2435,7 @@ impl App {
             "인덱스 최신"
         }
         .to_owned();
-        self.startup_sync_pending = cached && self.settings.fast_index;
+        self.startup_sync_pending = cached && self.settings.fast_index && !self.resident_active;
         if self.engine.is_some() {
             // This includes the second Ready after automatic startup replay.
             // Keep the displayed snapshot live until its replacement is sorted.
@@ -2376,6 +2466,47 @@ impl App {
             };
             handled += 1;
             match event {
+                AppEvent::ResidentWaiting { generation } if generation == self.generation => {
+                    self.indexing = false;
+                    self.index_message = "백그라운드 초기 인덱스 준비 중".into();
+                    EnableWindow(GetDlgItem(self.hwnd, REFRESH as i32), 1);
+                    EnableWindow(GetDlgItem(self.hwnd, FAST as i32), 1);
+                }
+                AppEvent::ResidentInstalled(result) => {
+                    self.notice = match result {
+                        Ok(()) => {
+                            "백그라운드 인덱서 등록 완료 · 초기 준비 후 자동 연결합니다.".into()
+                        }
+                        Err(error) => error,
+                    };
+                    self.poll_resident();
+                    self.update_status();
+                }
+                AppEvent::ResidentLoaded {
+                    generation,
+                    checkpoint,
+                    request_id,
+                    delta_stamp,
+                    result,
+                } => {
+                    self.resident_loading = false;
+                    if generation == self.generation
+                        && request_id >= self.resident_request_barrier
+                        && !self.file_operation_in_progress
+                        && !self.file_refresh_pending
+                        && !self.updating
+                    {
+                        match result {
+                            Ok(engine) => {
+                                self.resident_checkpoint = checkpoint;
+                                self.resident_delta_stamp = delta_stamp;
+                                self.accept_ready(engine, false);
+                                self.index_message = "백그라운드 동기화 · 최신 목록 반영".into();
+                            }
+                            Err(error) => self.notice = format!("백그라운드 목록 읽기: {error}"),
+                        }
+                    }
+                }
                 AppEvent::Ready {
                     generation,
                     engine,
@@ -2489,8 +2620,10 @@ impl App {
                     && revision == self.revision
                     && self.updating =>
                 {
-                    self.index_message =
-                        format!("대량 변경 자동 복구 중 · {entries}개 확인 · 기존 목록 검색 가능");
+                    self.index_message = format!(
+                        "{} · {entries}개 확인 · 기존 목록 검색 가능",
+                        self.recovery_label
+                    );
                 }
                 AppEvent::IconReady { key, icon, images } => {
                     self.pending_icons.remove(&key);
@@ -2638,6 +2771,11 @@ impl App {
         }
         if self.file_refresh_pending && self.pending.is_empty() {
             self.file_refresh_pending = false;
+            if self.resident_active {
+                if let Ok(id) = crate::resident::request(false) {
+                    self.resident_request_barrier = id;
+                }
+            }
         }
         if self.exit_after_file_operation {
             if self.file_refresh_pending {
@@ -2884,6 +3022,24 @@ impl App {
             return;
         };
         let (events, compacted, reconnect, full) = self.pending.take_work();
+        if self.resident_active && (events.is_err() || compacted || full) {
+            let _ = crate::resident::request(false);
+            self.index_message = "백그라운드 변경분 반영 대기 · 기존 목록 검색 가능".into();
+            self.update_status();
+            return;
+        }
+        self.recovery_label = if events.is_err() {
+            "전체 범위 복구 중"
+        } else if compacted || full {
+            "변경 폴더 확인 중"
+        } else {
+            "변경분 반영 중"
+        };
+        crate::diagnostics::record(
+            &platform::local_data_dir(),
+            "watcher_update",
+            serde_json::json!({"mode":self.recovery_label,"compacted":compacted,"full":full,"reconnect":reconnect,"reason":events.as_ref().err(),"events":events.as_ref().map_or(0,Vec::len)}),
+        );
         self.full_recovery = full;
         if reconnect {
             // Reattach failed/overflowed watchers before the scan so changes
@@ -2891,14 +3047,7 @@ impl App {
             self.configure_watcher();
         }
         self.updating = true;
-        self.index_message = if events.is_err() {
-            "대량 변경 자동 복구 중 · 기존 목록 검색 가능"
-        } else if compacted {
-            "대량 변경 폴더 복구 중 · 기존 목록 검색 가능"
-        } else {
-            "변경 반영 중 · 기존 목록 검색 가능"
-        }
-        .into();
+        self.index_message = format!("{} · 기존 목록 검색 가능", self.recovery_label);
         self.update_status();
         let generation = self.generation;
         let revision = self.revision;
@@ -2932,11 +3081,104 @@ impl App {
             })
             .expect("update worker");
     }
+    unsafe fn poll_resident(&mut self) {
+        if !crate::resident::enabled_for_process() {
+            return;
+        }
+        if !crate::resident::available() {
+            if self.resident_active {
+                self.index_message = "백그라운드 인덱서 연결 대기 · 저장 목록 검색 가능".into();
+                self.update_status();
+            }
+            return;
+        }
+        if !self.resident_active {
+            self.resident_active = true;
+            self.watcher.take();
+            self.pending.reset();
+            self.startup_sync_pending = false;
+            KillTimer(self.hwnd, STARTUP_SYNC_TIMER);
+            crate::diagnostics::record(
+                &platform::local_data_dir(),
+                "resident_connected",
+                serde_json::json!({}),
+            );
+        }
+        if IsWindowVisible(self.hwnd) != 0
+            && self.resident_request_at.elapsed() >= Duration::from_secs(15)
+        {
+            crate::resident::viewing();
+            self.resident_request_at = Instant::now();
+        }
+        if self.indexing
+            || self.updating
+            || self.resident_loading
+            || self.file_operation_in_progress
+        {
+            return;
+        }
+        let Some((directory, manifest)) = crate::resident::manifest() else {
+            self.index_message = "백그라운드 초기 인덱스 준비 중 · 저장 목록 검색 가능".into();
+            self.update_status();
+            return;
+        };
+        let stamp = crate::resident::delta_stamp(&directory);
+        if (manifest.content_checkpoint() == self.resident_checkpoint
+            && stamp == self.resident_delta_stamp)
+            || !manifest.matches(&self.settings.roots, &self.settings.excluded_folders)
+        {
+            return;
+        }
+        self.resident_loading = true;
+        let generation = self.generation;
+        let checkpoint = manifest.content_checkpoint();
+        let events = self.events.clone();
+        let previous = (checkpoint == self.resident_checkpoint)
+            .then(|| self.engine.clone())
+            .flatten();
+        std::thread::Builder::new()
+            .name("resident-snapshot".into())
+            .spawn(move || {
+                background_priority();
+                let loaded = crate::resident::load_view(
+                    &directory,
+                    &manifest,
+                    previous.as_ref().map(|e| e.index().as_ref()),
+                );
+                let request_id = loaded.as_ref().map_or(0, |v| v.request_id);
+                let delta_stamp = loaded.as_ref().ok().and_then(|v| v.delta_stamp);
+                let result = loaded.map(|view| Arc::new(SearchEngine::new(Arc::new(view.index))));
+                events.send(AppEvent::ResidentLoaded {
+                    generation,
+                    checkpoint,
+                    request_id,
+                    delta_stamp,
+                    result,
+                });
+            })
+            .expect("resident reader");
+    }
+    unsafe fn install_resident(&mut self) {
+        let _ = self.settings.save();
+        let events = self.events.clone();
+        self.notice = "백그라운드 인덱서 등록 · 관리자 권한 확인".into();
+        self.update_status();
+        std::thread::spawn(move || {
+            events.send(AppEvent::ResidentInstalled(
+                crate::resident::install_elevated(false),
+            ));
+        });
+    }
     unsafe fn schedule_cache(&mut self) {
         // A deadline, not a sliding debounce: frequent publications must not
         // postpone persistence indefinitely.
         if !self.cache_save_scheduled {
-            self.cache_save_scheduled = SetTimer(self.hwnd, CACHE_TIMER, 15000, None) != 0;
+            self.cache_save_scheduled = SetTimer(
+                self.hwnd,
+                CACHE_TIMER,
+                if self.resident_active { 60000 } else { 15000 },
+                None,
+            ) != 0;
         }
     }
     unsafe fn save_cache(&mut self) {
@@ -4457,7 +4699,15 @@ impl App {
             self.settings.fast_index as usize,
             0,
         );
-        place(self.auto_fast, 16, 458 - shift * 2, 530, 28);
+        place(self.auto_fast, 16, 458 - shift * 2, 330, 28);
+        let install_indexer = self.control(
+            "Button",
+            "백그라운드 인덱서 등록",
+            WS_TABSTOP | BS_OWNERDRAW as u32,
+            INSTALL_INDEXER,
+            hwnd,
+        );
+        place(install_indexer, 350, 456 - shift * 2, 196, 30);
         self.settings_error = self.control(
             "Static",
             "제외 폴더와 하위 항목은 검색하지 않습니다. 목록을 변경해도 실제 폴더는 삭제하지 않습니다.",
@@ -5007,6 +5257,10 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, message: u32, w: WPARAM, l: 
         }
         WM_COMMAND if w & 0xffff == CHECK_RELEASE => {
             app.check_release(true);
+            0
+        }
+        WM_COMMAND if w & 0xffff == INSTALL_INDEXER => {
+            app.install_resident();
             0
         }
         WM_COMMAND if w & 0xffff == ADD_ROOT => {

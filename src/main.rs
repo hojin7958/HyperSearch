@@ -6,6 +6,36 @@ mod indexer_process;
 
 fn main() {
     let mut args = std::env::args_os().skip(1).peekable();
+    if args.peek().is_some_and(|arg| {
+        arg == quickfind::resident::SERVICE_ARG
+            || arg == quickfind::resident::INSTALL_ARG
+            || arg == quickfind::resident::REMOVE_ARG
+    }) {
+        let mode = args.next().unwrap();
+        let sid = args
+            .next()
+            .and_then(|s| s.into_string().ok())
+            .unwrap_or_default();
+        let result = if mode == quickfind::resident::SERVICE_ARG {
+            quickfind::resident::dispatch(&sid)
+        } else {
+            args.next()
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| "설정 경로가 없습니다.".to_string())
+                .and_then(|settings| {
+                    quickfind::resident::install(
+                        &sid,
+                        &settings,
+                        mode == quickfind::resident::REMOVE_ARG,
+                    )
+                })
+        };
+        if let Err(error) = result {
+            show_error(&error);
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.peek().is_some_and(|arg| arg == updater::APPLY_ARG) {
         args.next();
         let result = args

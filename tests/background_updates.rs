@@ -153,7 +153,8 @@ fn hidden_app_reconciles_a_file_storm_and_keeps_watching() {
             let started = Instant::now();
             send(window, WM_NULL, 0, 0);
             max_response = max_response.max(started.elapsed());
-            saw_recovery |= text(status).contains("대량 변경");
+            saw_recovery |=
+                text(status).contains("복구 중") || text(status).contains("폴더 확인 중");
         }
     }
     assert!(
@@ -164,7 +165,7 @@ fn hidden_app_reconciles_a_file_storm_and_keeps_watching() {
         let started = Instant::now();
         send(window, WM_NULL, 0, 0);
         max_response = max_response.max(started.elapsed());
-        saw_recovery |= text(status).contains("대량 변경");
+        saw_recovery |= text(status).contains("복구 중") || text(status).contains("폴더 확인 중");
         send(list, LVM_GETITEMCOUNT, 0, 0) == 8002
     });
     assert_eq!(unsafe { IsWindowVisible(window) }, 0);
@@ -307,7 +308,9 @@ fn million_row_snapshot_keeps_search_and_scrolling_live_during_a_real_file_storm
         send(window, WM_NULL, 0, 0);
         max_response = max_response.max(started.elapsed());
         let message = text(status);
-        let busy = message.contains("대량 변경") || message.contains("새 검색 결과 준비");
+        let busy = message.contains("복구 중")
+            || message.contains("폴더 확인 중")
+            || message.contains("새 검색 결과 준비");
         if busy && !saw_update {
             saw_update = true;
             // These successive queries must reach the displayed rows while

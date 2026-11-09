@@ -144,6 +144,7 @@ impl SearchEngine {
     pub fn new(mut index: Arc<Index>) -> Self {
         if let Some(unique) = Arc::get_mut(&mut index) {
             unique.compact();
+            unique.share();
         }
         Self {
             index,

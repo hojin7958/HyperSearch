@@ -229,6 +229,9 @@ fn load_compact(
 }
 
 pub fn save(path: &Path, index: &Index) -> Result<(), String> {
+    if index.is_shared() {
+        return save(path, &index.materialized());
+    }
     validate(index)?;
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent).map_err(err)?;

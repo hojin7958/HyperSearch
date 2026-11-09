@@ -1,9 +1,9 @@
 //! Compact 28-byte file records, deduplicated names, and shared folder trees.
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     hash::{Hash, Hasher},
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,18 +51,39 @@ pub struct EntryStore {
     pub(crate) wide_times: Vec<(u32, i64)>,
     intern: Option<HashMap<u64, u32>>,
     garbage_hint: usize,
+    base: Option<Arc<EntryStore>>,
+    patches: BTreeMap<usize, Entry>,
+    shared_len: usize,
 }
 impl EntryStore {
     pub fn len(&self) -> usize {
-        self.records.len()
+        if self.base.is_some() {
+            self.shared_len
+        } else {
+            self.records.len()
+        }
     }
     pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
+        self.len() == 0
     }
     pub fn get(&self, row: usize) -> Option<EntryView<'_>> {
         (row < self.len()).then(|| self.entry(row))
     }
     pub fn entry(&self, row: usize) -> EntryView<'_> {
+        if let Some(base) = &self.base {
+            assert!(row < self.shared_len);
+            return self.patches.get(&row).map_or_else(
+                || base.entry(row),
+                |e| EntryView {
+                    name: &e.name,
+                    parent: e.parent,
+                    size: e.size,
+                    created: e.created,
+                    modified: e.modified,
+                    is_dir: e.is_dir,
+                },
+            );
+        }
         let r = self.records[row].0;
         EntryView {
             name: self.name(r[0]),
@@ -108,6 +129,11 @@ impl EntryStore {
         });
     }
     pub fn push_view(&mut self, entry: EntryView<'_>) {
+        if self.base.is_some() {
+            self.patches.insert(self.shared_len, entry.to_owned());
+            self.shared_len += 1;
+            return;
+        }
         let name = self.intern_name(entry.name);
         let row = self.len();
         let created = self.encode_time(row, false, entry.created);
@@ -127,6 +153,25 @@ impl EntryStore {
         (0..self.len()).map(|row| self.entry(row))
     }
     pub fn retain(&mut self, mut keep: impl FnMut(EntryView<'_>) -> bool) {
+        if self.base.is_some() {
+            // Dense row IDs are maintained by moving the last live row into a
+            // deleted slot. Only changed rows are copied; old snapshots stay live.
+            let mut row = 0;
+            while row < self.shared_len {
+                if keep(self.entry(row)) {
+                    row += 1;
+                    continue;
+                }
+                let last = self.shared_len - 1;
+                if row != last {
+                    let replacement = self.entry(last).to_owned();
+                    self.patches.insert(row, replacement);
+                }
+                self.patches.remove(&last);
+                self.shared_len -= 1;
+            }
+            return;
+        }
         let mut to = 0;
         let mut wide = Vec::with_capacity(self.wide_times.len());
         for from in 0..self.len() {
@@ -148,9 +193,23 @@ impl EntryStore {
         self.wide_times = wide;
     }
     pub fn set_parent(&mut self, row: usize, parent: u32) {
+        if self.base.is_some() {
+            let mut entry = self.entry(row).to_owned();
+            entry.parent = parent;
+            self.patches.insert(row, entry);
+            return;
+        }
         self.records[row].0[1] = parent;
     }
     pub fn compact(&mut self) {
+        if self.base.is_some() {
+            // Consolidate only after material churn, not on every publication.
+            if self.patches.len() > 65_536 && self.patches.len() > self.len() / 8 {
+                *self = self.iter().map(EntryView::to_owned).collect();
+                self.compact();
+            }
+            return;
+        }
         self.intern = None;
         if self.garbage_hint >= 8 * 1024 * 1024 && self.garbage_hint >= self.names.len() / 4 {
             self.reclaim_names();
@@ -192,6 +251,14 @@ impl EntryStore {
         self.names.truncate(to);
     }
     pub fn allocated_bytes(&self) -> usize {
+        if let Some(base) = &self.base {
+            return base.allocated_bytes()
+                + self
+                    .patches
+                    .values()
+                    .map(|e| 96 + e.name.capacity())
+                    .sum::<usize>();
+        }
         self.records.capacity() * 28
             + self.names.capacity()
             + self.wide_times.capacity() * 16
@@ -231,6 +298,14 @@ impl EntryStore {
         self.names.extend_from_slice(value.as_bytes());
         self.intern.as_mut().unwrap().insert(hash, offset);
         offset
+    }
+    fn share(&mut self) {
+        if self.base.is_none() && !self.is_empty() {
+            self.compact();
+            let previous = std::mem::take(self);
+            self.shared_len = previous.len();
+            self.base = Some(Arc::new(previous));
+        }
     }
 }
 impl FromIterator<Entry> for EntryStore {
@@ -296,13 +371,14 @@ pub struct FolderStore {
     pub(crate) names: Vec<u8>,
     intern: Option<HashMap<u64, u32>>,
     lookup: OnceLock<Vec<FolderLookup>>,
+    base: Option<Arc<FolderStore>>,
 }
 impl FolderStore {
     pub fn len(&self) -> usize {
-        self.ids.len()
+        self.base.as_ref().map_or(0, |b| b.len()) + self.ids.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.ids.is_empty()
+        self.len() == 0
     }
     /// Adds exactly one public folder ID, even when ancestors need new nodes.
     pub fn push(&mut self, value: String) {
@@ -336,7 +412,7 @@ impl FolderStore {
         if parent == NO_NODE {
             parent = self.intern_node(parent, value);
         }
-        let id = self.ids.len() as u32;
+        let id = self.len() as u32;
         self.ids.push(parent);
         id
     }
@@ -364,6 +440,11 @@ impl FolderStore {
         unsafe { std::str::from_utf8_unchecked(&self.names[start..start + node.len as usize]) }
     }
     pub fn path(&self, folder: usize) -> String {
+        let base_len = self.base.as_ref().map_or(0, |b| b.len());
+        if folder < base_len {
+            return self.base.as_ref().unwrap().path(folder);
+        }
+        let folder = folder - base_len;
         let mut node = self.ids[folder];
         let mut pieces = Vec::with_capacity(16);
         let mut length = 0;
@@ -383,6 +464,15 @@ impl FolderStore {
     /// Reuse both buffers while searching many files. No complete folder-path
     /// string table is retained alongside the compact tree.
     pub(crate) fn write_path(&self, folder: usize, path: &mut String, ancestry: &mut Vec<u32>) {
+        let base_len = self.base.as_ref().map_or(0, |b| b.len());
+        if folder < base_len {
+            self.base
+                .as_ref()
+                .unwrap()
+                .write_path(folder, path, ancestry);
+            return;
+        }
+        let folder = folder - base_len;
         path.clear();
         ancestry.clear();
         let mut node = self.ids[folder];
@@ -404,13 +494,18 @@ impl FolderStore {
     /// ordinary file edit never needs a full map of allocated path strings.
     /// Hash collisions are verified against the original path before returning.
     pub fn find_path(&self, path: &str) -> Option<u32> {
+        if let Some(base) = &self.base {
+            if let Some(id) = base.find_path(path) {
+                return Some(id);
+            }
+        }
         let normalized = normalized_folder(path);
         let hash = hash_name(1, &normalized);
         let lookup = self.lookup.get_or_init(|| {
-            let mut lookup: Vec<FolderLookup> = self
-                .iter()
-                .enumerate()
-                .map(|(id, path)| {
+            let first = self.base.as_ref().map_or(0, |b| b.len());
+            let mut lookup: Vec<FolderLookup> = (first..self.len())
+                .map(|id| {
+                    let path = self.path(id);
                     let hash = hash_name(1, &normalized_folder(&path));
                     FolderLookup {
                         low: hash as u32,
@@ -436,11 +531,18 @@ impl FolderStore {
         self.names.shrink_to_fit();
     }
     pub fn allocated_bytes(&self) -> usize {
-        self.ids.capacity() * 4
+        self.base.as_ref().map_or(0, |b| b.allocated_bytes())
+            + self.ids.capacity() * 4
             + self.nodes.capacity() * 12
             + self.names.capacity()
             + self.intern.as_ref().map_or(0, |m| m.capacity() * 24)
             + self.lookup.get().map_or(0, |lookup| lookup.capacity() * 12)
+    }
+    fn share(&mut self) {
+        if self.base.is_none() && !self.is_empty() {
+            self.compact();
+            self.base = Some(Arc::new(std::mem::take(self)));
+        }
     }
 }
 impl FromIterator<String> for FolderStore {
@@ -479,6 +581,24 @@ pub struct Index {
     pub built_at: i64,
 }
 impl Index {
+    pub fn share(&mut self) {
+        self.entries.share();
+        self.folders.share();
+    }
+    pub(crate) fn is_shared(&self) -> bool {
+        self.entries.base.is_some() || self.folders.base.is_some()
+    }
+    pub(crate) fn materialized(&self) -> Self {
+        Self {
+            entries: self.entries.iter().map(EntryView::to_owned).collect(),
+            folders: self.folders.iter().collect(),
+            roots: self.roots.clone(),
+            excluded_folders: self.excluded_folders.clone(),
+            scan_ms: self.scan_ms,
+            skipped: self.skipped,
+            built_at: self.built_at,
+        }
+    }
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -521,6 +641,59 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_snapshot_changes_copy_only_patches_and_preserve_old_rows() {
+        let mut old = Index::default();
+        old.folders.push("C:\\자료".into());
+        for n in 0..100_000 {
+            old.entries.push(Entry {
+                name: format!("file-{n}"),
+                parent: 0,
+                size: Some(n),
+                created: Some(-1),
+                modified: Some(i64::MAX),
+                is_dir: false,
+            });
+        }
+        old.share();
+        let mut updated = old.clone();
+        assert!(Arc::ptr_eq(
+            old.entries.base.as_ref().unwrap(),
+            updated.entries.base.as_ref().unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            old.folders.base.as_ref().unwrap(),
+            updated.folders.base.as_ref().unwrap()
+        ));
+        updated.entries.retain(|e| e.name != "file-17");
+        updated.folders.push("C:\\다른 폴더".into());
+        updated.entries.push(Entry {
+            name: "새 파일".into(),
+            parent: 1,
+            size: Some(7),
+            created: Some(-1),
+            modified: Some(i64::MAX),
+            is_dir: false,
+        });
+        assert_eq!(old.entries.entry(17).name, "file-17");
+        assert_eq!(old.folders.len(), 1);
+        assert_eq!(updated.entries.patches.len(), 2);
+        assert_eq!(updated.entries.entry(17).name, "file-99999");
+        assert_eq!(updated.full_path(99_999), "C:\\다른 폴더\\새 파일");
+        assert_eq!(updated.folders.find_path("c:\\자료"), Some(0));
+        assert_eq!(updated.folders.find_path("c:\\다른 폴더"), Some(1));
+        let flat = updated.materialized();
+        for row in [0, 17, 99_999] {
+            assert_eq!(flat.full_path(row), updated.full_path(row));
+            assert_eq!(flat.entry(row).modified, Some(i64::MAX));
+        }
+        let path =
+            std::env::temp_dir().join(format!("hyperfinder-shared-{}.bin", std::process::id()));
+        crate::cache::save(&path, &updated).unwrap();
+        let loaded = crate::cache::load(&path, &[]).unwrap();
+        assert_eq!(loaded.full_path(99_999), updated.full_path(99_999));
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn compact_records_are_28_bytes_and_lossless() {
         assert_eq!(std::mem::size_of::<Record>(), 28);

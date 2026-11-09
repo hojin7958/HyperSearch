@@ -76,7 +76,7 @@ impl Snapshot {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 struct Parsed {
     frn: u64,
     base: u64,
@@ -87,7 +87,7 @@ struct Parsed {
     size: Option<u64>,
     names: Vec<FileName>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct FileName {
     parent: u64,
     namespace: u8,
@@ -720,7 +720,12 @@ mod win {
                 i64_at(&b, 24)?.max(i64_at(&b, 8)?),
             ))
         }
-        fn changed(&self, snapshot: &Snapshot) -> Result<(HashSet<u64>, i64), String> {
+        fn changed_batch(
+            &self,
+            snapshot: &Snapshot,
+            limit: usize,
+            cancel: &AtomicBool,
+        ) -> Result<(HashSet<u64>, i64), String> {
             let (id, target, lowest) = self.journal().ok_or("USN 변경저널을 읽을 수 없습니다.")?;
             if snapshot.journal_id == 0
                 || id != snapshot.journal_id
@@ -733,6 +738,9 @@ mod win {
             let mut changes = HashSet::new();
             let mut buffer = vec![0; 1024 * 1024];
             while next < target {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("인덱싱을 취소했습니다.".into());
+                }
                 let input = READ_USN_JOURNAL_DATA_V0 {
                     StartUsn: next,
                     ReasonMask: u32::MAX,
@@ -771,8 +779,10 @@ mod win {
                     pos += record_len;
                 }
                 next = cursor;
-                if changes.len() > 500_000 {
-                    return Err("USN 변경량이 많아 MFT를 다시 읽습니다.".into());
+                // A large backlog is drained in bounded batches. Quantity is
+                // never treated as evidence that the journal was lost.
+                if changes.len() >= limit {
+                    return Ok((changes, next.min(target)));
                 }
             }
             Ok((changes, target))
@@ -934,7 +944,7 @@ mod win {
             Ok(snapshot)
         }
         fn replay(&self, snapshot: &mut Snapshot, cancel: &AtomicBool) -> Result<usize, String> {
-            let (changes, next) = self.changed(snapshot)?;
+            let (changes, next) = self.changed_batch(snapshot, usize::MAX, cancel)?;
             if changes.is_empty() {
                 snapshot.next_usn = next;
                 return Ok(0);
@@ -1215,6 +1225,641 @@ mod win {
         Ok(())
     }
 
+    struct LiveVolume {
+        snapshot: Snapshot,
+        pending: HashMap<u64, Option<Parsed>>,
+        retry_at: Instant,
+    }
+    /// The service keeps the MFT snapshot resident. USN batches only replace
+    /// changed records in an overlay; full-vector merging happens at checkpoints.
+    pub struct ResidentIndex {
+        volumes: HashMap<u8, LiveVolume>,
+        roots: Vec<PathBuf>,
+        excluded: Vec<PathBuf>,
+        dirty: bool,
+        pub changed_records: u64,
+        pub full_scans: u64,
+        caught_up: bool,
+        failures: HashMap<u8, Instant>,
+        raw_dirty: bool,
+        private_roots: Vec<PathBuf>,
+        public_changes: HashMap<String, crate::resident_delta::Change>,
+        delta_dirty: bool,
+        structural: bool,
+    }
+    impl ResidentIndex {
+        pub fn new(roots: Vec<PathBuf>, excluded: Vec<PathBuf>, sidecar: Option<&Path>) -> Self {
+            let snapshots = sidecar
+                .and_then(|p| load_snapshots(p).ok())
+                .unwrap_or_default();
+            Self {
+                volumes: snapshots
+                    .into_iter()
+                    .map(|snapshot| {
+                        (
+                            snapshot.drive,
+                            LiveVolume {
+                                snapshot,
+                                pending: HashMap::new(),
+                                retry_at: Instant::now(),
+                            },
+                        )
+                    })
+                    .collect(),
+                roots,
+                excluded,
+                dirty: false,
+                changed_records: 0,
+                full_scans: 0,
+                caught_up: false,
+                failures: HashMap::new(),
+                raw_dirty: false,
+                private_roots: Vec::new(),
+                public_changes: HashMap::new(),
+                delta_dirty: false,
+                structural: false,
+            }
+        }
+        pub fn configure(&mut self, roots: Vec<PathBuf>, excluded: Vec<PathBuf>) {
+            if self.roots != roots || self.excluded != excluded {
+                self.roots = roots;
+                self.excluded = excluded;
+                self.dirty = true;
+                self.structural = true;
+            }
+        }
+        pub fn rebuild(&mut self) {
+            self.volumes.clear();
+            self.dirty = true;
+            self.structural = true;
+        }
+        pub fn dirty(&self) -> bool {
+            self.dirty
+        }
+        pub fn caught_up(&self) -> bool {
+            self.caught_up
+        }
+        pub fn raw_dirty(&self) -> bool {
+            self.raw_dirty
+        }
+        pub fn delta_dirty(&self) -> bool {
+            self.delta_dirty
+        }
+        pub fn memory_pressure(&self) -> bool {
+            self.public_changes.len() > 32_768
+                || self
+                    .public_changes
+                    .values()
+                    .map(|c| c.path.len() + 256)
+                    .sum::<usize>()
+                    > 8 * 1024 * 1024
+        }
+        pub fn needs_checkpoint(&self) -> bool {
+            self.structural
+                || self.public_changes.len() > 32_768
+                || self
+                    .public_changes
+                    .values()
+                    .map(|c| c.path.len() + c.entry.as_ref().map_or(0, |e| e.name.len()) + 256)
+                    .sum::<usize>()
+                    > 8 * 1024 * 1024
+        }
+        pub fn delta(
+            &self,
+            base: u128,
+            revision: u128,
+            updated: u64,
+        ) -> crate::resident_delta::Delta {
+            crate::resident_delta::Delta {
+                base,
+                revision,
+                updated,
+                request_id: 0,
+                changes: self.public_changes.values().cloned().collect(),
+            }
+        }
+        pub fn delta_published(&mut self) {
+            self.delta_dirty = false;
+        }
+        pub fn set_private_roots(&mut self, roots: Vec<PathBuf>) {
+            self.private_roots = roots;
+        }
+        pub fn poll(
+            &mut self,
+            cancel: &AtomicBool,
+            mut report: impl FnMut(&str, serde_json::Value),
+        ) -> Result<(), String> {
+            let grouped = roots_by_drive(&self.roots)?;
+            self.caught_up = true;
+            self.volumes.retain(|drive, _| grouped.contains_key(drive));
+            for &drive in grouped.keys() {
+                if self
+                    .failures
+                    .get(&drive)
+                    .is_some_and(|until| Instant::now() < *until)
+                {
+                    self.caught_up = false;
+                    continue;
+                }
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("인덱싱을 취소했습니다.".into());
+                }
+                if self
+                    .volumes
+                    .get(&drive)
+                    .is_some_and(|v| Instant::now() < v.retry_at)
+                {
+                    self.caught_up = false;
+                    continue;
+                }
+                let volume = match Volume::open(drive) {
+                    Ok(volume) => volume,
+                    Err(error) => {
+                        self.failures
+                            .insert(drive, Instant::now() + std::time::Duration::from_secs(30));
+                        self.caught_up = false;
+                        if let Some(state) = self.volumes.get_mut(&drive) {
+                            state.retry_at = Instant::now() + std::time::Duration::from_secs(30);
+                        }
+                        report(
+                            "volume_unavailable",
+                            serde_json::json!({"drive":(drive as char).to_string(),"reason":error}),
+                        );
+                        continue;
+                    }
+                };
+                let journal = volume.journal();
+                let rebuild_reason = match self.volumes.get(&drive) {
+                    None => Some("initial_index"),
+                    Some(v) if v.snapshot.serial != volume.data.VolumeSerialNumber as u64 => {
+                        Some("volume_replaced")
+                    }
+                    Some(v)
+                        if journal.is_some_and(|(id, next, low)| {
+                            v.snapshot.journal_id != id
+                                || v.snapshot.next_usn < low
+                                || v.snapshot.next_usn > next
+                        }) =>
+                    {
+                        Some("journal_gap")
+                    }
+                    _ => None,
+                };
+                if let Some(reason) = rebuild_reason {
+                    report(
+                        "volume_rebuild_started",
+                        serde_json::json!({"drive":(drive as char).to_string(),"reason":reason}),
+                    );
+                    // Replace only this drive, and only after a successful scan.
+                    match volume.scan(cancel, &|_| {}, Instant::now()) {
+                        Ok(mut snapshot) => {
+                            volume.hydrate_incomplete(
+                                &mut snapshot,
+                                cancel,
+                                &|_| {},
+                                Instant::now(),
+                            )?;
+                            self.volumes.insert(
+                                drive,
+                                LiveVolume {
+                                    snapshot,
+                                    pending: HashMap::new(),
+                                    retry_at: Instant::now(),
+                                },
+                            );
+                            self.dirty = true;
+                            self.structural = true;
+                            self.full_scans += 1;
+                        }
+                        Err(error) => {
+                            self.failures
+                                .insert(drive, Instant::now() + std::time::Duration::from_secs(30));
+                            self.caught_up = false;
+                            report(
+                                "volume_rebuild_failed",
+                                serde_json::json!({"drive":(drive as char).to_string(),"reason":error}),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                let Some(state) = self.volumes.get_mut(&drive) else {
+                    continue;
+                };
+                if journal.is_none() || state.snapshot.journal_id == 0 {
+                    self.caught_up = false;
+                    state.retry_at = Instant::now() + std::time::Duration::from_secs(30);
+                    report(
+                        "journal_unavailable",
+                        serde_json::json!({"drive":(drive as char).to_string()}),
+                    );
+                    continue;
+                }
+                match Self::replay_batch(
+                    &volume,
+                    state,
+                    cancel,
+                    &self.roots,
+                    &self.excluded,
+                    &self.private_roots,
+                ) {
+                    Ok((count, relevant, raw_changed, public_changes, structural)) => {
+                        self.changed_records += count as u64;
+                        self.dirty |= relevant;
+                        self.raw_dirty |= raw_changed;
+                        self.delta_dirty |= !public_changes.is_empty();
+                        self.structural |= structural;
+                        for change in public_changes {
+                            self.public_changes
+                                .insert(change.path.to_lowercase(), change);
+                        }
+                        self.caught_up &=
+                            journal.is_some_and(|(_, target, _)| state.snapshot.next_usn >= target);
+                    }
+                    Err(error) => {
+                        self.caught_up = false;
+                        state.retry_at = Instant::now() + std::time::Duration::from_secs(30);
+                        report(
+                            "journal_retry",
+                            serde_json::json!({"drive":(drive as char).to_string(),"reason":error}),
+                        );
+                    }
+                }
+                if state.pending.len() >= 65_536 {
+                    merge_pending(state)?;
+                }
+            }
+            Ok(())
+        }
+        fn replay_batch(
+            volume: &Volume,
+            state: &mut LiveVolume,
+            cancel: &AtomicBool,
+            roots: &[PathBuf],
+            excluded: &[PathBuf],
+            private_roots: &[PathBuf],
+        ) -> Result<(usize, bool, bool, Vec<crate::resident_delta::Change>, bool), String> {
+            let (changes, next) = volume.changed_batch(&state.snapshot, 4096, cancel)?;
+            if changes.is_empty() {
+                state.snapshot.next_usn = next;
+                return Ok((0, false, false, Vec::new(), false));
+            }
+            let mut updates = HashMap::new();
+            let mut parents = HashSet::new();
+            let mut relevant = false;
+            for reference in &changes {
+                let number = reference & FRN_MASK;
+                if let Some(old) = live_record(state, number) {
+                    for name in &old.names {
+                        parents.insert(name.parent);
+                    }
+                }
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("인덱싱을 취소했습니다.".into());
+                }
+                let parsed = volume.complete_record(number)?;
+                if let Some(p) = &parsed {
+                    for name in &p.names {
+                        parents.insert(name.parent);
+                    }
+                    updates.insert(p.frn & FRN_MASK, Some(p.clone()));
+                }
+                updates.entry(number).or_insert(parsed);
+            }
+            for parent in parents {
+                if updates.contains_key(&(parent & FRN_MASK)) {
+                    continue;
+                }
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("인덱싱을 취소했습니다.".into());
+                }
+                if let Some(parsed) = volume.complete_record(parent)? {
+                    if parsed.frn == parent && parsed.is_dir {
+                        updates.insert(parent & FRN_MASK, Some(parsed));
+                    }
+                }
+            }
+            // CLOSE/security/duplicate journal records often do not change
+            // searchable metadata. Advance the cursor without publishing again.
+            updates.retain(|number, value| {
+                !same_visible_record(live_record(state, *number).as_ref(), value.as_ref())
+            });
+            updates.retain(|number, value| {
+                let old = live_record(state, *number);
+                let private =
+                    |p: Option<&Parsed>| p.is_none_or(|p| record_private(state, p, private_roots));
+                !private(old.as_ref()) || !private(value.as_ref())
+            });
+            let raw_changed = !updates.is_empty();
+            let mut public_changes = Vec::new();
+            let mut structure_candidates = HashSet::new();
+            for number in updates.keys() {
+                let old = live_record(state, *number);
+                let new = updates.get(number).and_then(|r| r.as_ref());
+                let names = |p: &Parsed| {
+                    let mut names: Vec<_> = p
+                        .names
+                        .iter()
+                        .filter(|n| n.namespace != 2)
+                        .map(|n| (n.parent, n.name.clone()))
+                        .collect();
+                    names.sort_unstable();
+                    names
+                };
+                let structural = match (old.as_ref(), new) {
+                    (Some(a), Some(b)) => {
+                        (a.is_dir || b.is_dir)
+                            && (a.is_dir != b.is_dir
+                                || a.is_reparse != b.is_reparse
+                                || names(a) != names(b))
+                    }
+                    (Some(a), None) => a.is_dir,
+                    (None, Some(b)) => b.is_dir,
+                    _ => false,
+                };
+                if structural {
+                    structure_candidates.insert(*number);
+                }
+                if let Some(old) = old {
+                    let entries = public_records(state, &old, roots, excluded);
+                    if !entries.is_empty() && structural {
+                        structure_candidates.insert(u64::MAX);
+                    }
+                    public_changes.extend(
+                        entries
+                            .into_iter()
+                            .map(|(path, _)| crate::resident_delta::Change { path, entry: None }),
+                    );
+                }
+            }
+            // All reads succeeded before the cursor or overlay is advanced.
+            let numbers: Vec<u64> = updates.keys().copied().collect();
+            state.pending.extend(updates);
+            for number in numbers {
+                if let Some(record) = live_record(state, number) {
+                    let entries = public_records(state, &record, roots, excluded);
+                    if !entries.is_empty() && structure_candidates.contains(&number) {
+                        structure_candidates.insert(u64::MAX);
+                    }
+                    public_changes.extend(entries.into_iter().map(|(path, entry)| {
+                        crate::resident_delta::Change {
+                            path,
+                            entry: Some(entry),
+                        }
+                    }));
+                }
+            }
+            state.snapshot.next_usn = next;
+            relevant |= !public_changes.is_empty();
+            Ok((
+                changes.len(),
+                relevant,
+                raw_changed,
+                public_changes,
+                structure_candidates.contains(&u64::MAX),
+            ))
+        }
+        pub fn checkpoint(&mut self, output: &Path) -> Result<usize, String> {
+            let grouped = roots_by_drive(&self.roots)?;
+            if grouped
+                .keys()
+                .any(|drive| !self.volumes.contains_key(drive))
+            {
+                return Err("일부 드라이브가 준비되지 않아 기존 목록을 유지합니다.".into());
+            }
+            let mut index = Index {
+                roots: self
+                    .roots
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect(),
+                built_at: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+                ..Index::default()
+            };
+            let mut drives: Vec<u8> = self.volumes.keys().copied().collect();
+            drives.sort_unstable();
+            for drive in drives {
+                let state = self.volumes.get_mut(&drive).unwrap();
+                merge_pending(state)?;
+                if let Some(roots) = grouped.get(&drive) {
+                    append_index(&mut index, &state.snapshot, roots)?;
+                }
+            }
+            crate::exclusions::FolderExclusions::new(&self.excluded).apply(&mut index);
+            index.compact();
+            // The caller publishes a generation manifest only after both files
+            // are durable, so a crash cannot pair new USNs with an old index.
+            save_snapshot_refs(
+                &output.with_extension("ntfs.bin"),
+                self.volumes.values().map(|v| &v.snapshot),
+            )?;
+            crate::cache::save(output, &index)?;
+            self.dirty = false;
+            self.raw_dirty = false;
+            self.public_changes.clear();
+            self.delta_dirty = false;
+            self.structural = false;
+            Ok(index.len())
+        }
+        pub fn checkpoint_unchanged(
+            &mut self,
+            output: &Path,
+            previous: &Path,
+        ) -> Result<(), String> {
+            for state in self.volumes.values_mut() {
+                merge_pending(state)?;
+            }
+            save_snapshot_refs(
+                &output.with_extension("ntfs.bin"),
+                self.volumes.values().map(|v| &v.snapshot),
+            )?;
+            std::fs::hard_link(previous, output).map_err(|e| e.to_string())?;
+            self.raw_dirty = false;
+            Ok(())
+        }
+    }
+    fn merge_pending(state: &mut LiveVolume) -> Result<(), String> {
+        if state.pending.is_empty() {
+            return Ok(());
+        }
+        state
+            .snapshot
+            .nodes
+            .retain(|n| !state.pending.contains_key(&(n.frn & FRN_MASK)));
+        for record in state.pending.values().flatten() {
+            state.snapshot.add(record)?;
+        }
+        state.pending.clear();
+        state
+            .snapshot
+            .nodes
+            .sort_unstable_by_key(|n| n.frn & FRN_MASK);
+        let mut names = Vec::new();
+        for node in &mut state.snapshot.nodes {
+            let start = node.name as usize;
+            node.name = u32::try_from(names.len()).map_err(|_| "NTFS 이름 풀 한도 초과")?;
+            names.extend_from_slice(&state.snapshot.names[start..start + node.name_len as usize]);
+        }
+        state.snapshot.names = names;
+        Ok(())
+    }
+    fn live_record(state: &LiveVolume, number: u64) -> Option<Parsed> {
+        if let Some(value) = state.pending.get(&(number & FRN_MASK)) {
+            return value.clone();
+        }
+        let snapshot = &state.snapshot;
+        let start = snapshot
+            .nodes
+            .partition_point(|n| (n.frn & FRN_MASK) < (number & FRN_MASK));
+        let nodes: Vec<&Node> = snapshot.nodes[start..]
+            .iter()
+            .take_while(|n| (n.frn & FRN_MASK) == (number & FRN_MASK))
+            .collect();
+        let node = *nodes.first()?;
+        Some(Parsed {
+            frn: node.frn,
+            is_dir: node.flags & NODE_DIRECTORY != 0,
+            is_reparse: node.flags & NODE_REPARSE != 0,
+            size: (node.size != MISSING_SIZE).then_some(node.size),
+            created: (node.created != MISSING_TIME).then_some(node.created),
+            modified: (node.modified != MISSING_TIME).then_some(node.modified),
+            names: nodes
+                .into_iter()
+                .map(|n| FileName {
+                    parent: n.parent,
+                    namespace: 1,
+                    name: snapshot.name(n).to_owned(),
+                })
+                .collect(),
+            ..Parsed::default()
+        })
+    }
+    fn same_visible_record(a: Option<&Parsed>, b: Option<&Parsed>) -> bool {
+        match (a, b) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                let names = |p: &Parsed| {
+                    let mut n: Vec<_> = p
+                        .names
+                        .iter()
+                        .filter(|n| n.namespace != 2)
+                        .map(|n| (n.parent, n.name.clone()))
+                        .collect();
+                    n.sort_unstable();
+                    n
+                };
+                a.frn == b.frn
+                    && a.is_dir == b.is_dir
+                    && a.is_reparse == b.is_reparse
+                    && a.size == b.size
+                    && a.created == b.created
+                    && a.modified == b.modified
+                    && names(a) == names(b)
+            }
+            _ => false,
+        }
+    }
+    fn live_directory(state: &LiveVolume, reference: u64, depth: usize) -> Option<String> {
+        if depth > 256 {
+            return None;
+        }
+        if reference & FRN_MASK == 5 {
+            return Some(format!("{}:\\", state.snapshot.drive as char));
+        }
+        let parsed = live_record(state, reference)?;
+        if parsed.frn != reference || !parsed.is_dir || parsed.is_reparse {
+            return None;
+        }
+        let name = parsed.names.iter().find(|n| n.namespace != 2)?;
+        let parent = live_directory(state, name.parent, depth + 1)?;
+        Some(format!(
+            "{}{}{}",
+            parent,
+            if parent.ends_with('\\') { "" } else { "\\" },
+            name.name
+        ))
+    }
+    fn record_private(state: &LiveVolume, record: &Parsed, roots: &[PathBuf]) -> bool {
+        let rules = crate::exclusions::FolderExclusions::new(roots);
+        record
+            .names
+            .iter()
+            .filter(|n| n.namespace != 2)
+            .all(|name| {
+                live_directory(state, name.parent, 0)
+                    .is_some_and(|parent| rules.matches(&PathBuf::from(parent).join(&name.name)))
+            })
+    }
+    fn public_records(
+        state: &LiveVolume,
+        record: &Parsed,
+        roots: &[PathBuf],
+        excluded: &[PathBuf],
+    ) -> Vec<(String, crate::model::Entry)> {
+        if record.frn & FRN_MASK < 16 {
+            return Vec::new();
+        }
+        let rules = crate::exclusions::FolderExclusions::new(excluded);
+        record
+            .names
+            .iter()
+            .filter(|n| n.namespace != 2)
+            .filter_map(|name| {
+                let parent = live_directory(state, name.parent, 0)?;
+                let path = PathBuf::from(parent).join(&name.name);
+                let key = normalized(&path.to_string_lossy());
+                if rules.matches(&path)
+                    || !roots.iter().any(|root| {
+                        let root = normalized(&root.to_string_lossy());
+                        key != root && child(&key, &root)
+                    })
+                {
+                    return None;
+                }
+                Some((
+                    path.to_string_lossy().into_owned(),
+                    crate::model::Entry {
+                        name: name.name.clone(),
+                        parent: 0,
+                        size: if record.is_dir { None } else { record.size },
+                        created: record.created,
+                        modified: record.modified,
+                        is_dir: record.is_dir,
+                    },
+                ))
+            })
+            .collect()
+    }
+    #[cfg(test)]
+    fn record_in_scope(
+        state: &LiveVolume,
+        record: &Parsed,
+        roots: &[PathBuf],
+        excluded: &[PathBuf],
+    ) -> bool {
+        let exclusions = crate::exclusions::FolderExclusions::new(excluded);
+        record
+            .names
+            .iter()
+            .filter(|n| n.namespace != 2)
+            .any(|name| {
+                let Some(parent) = live_directory(state, name.parent, 0) else {
+                    return false;
+                };
+                let path = PathBuf::from(parent).join(&name.name);
+                !exclusions.matches(&path)
+                    && roots.iter().any(|root| {
+                        child(
+                            &normalized(&path.to_string_lossy()),
+                            &normalized(&root.to_string_lossy()),
+                        )
+                    })
+            })
+    }
+
     pub fn run(
         roots: &[PathBuf],
         excluded_folders: &[PathBuf],
@@ -1316,6 +1961,74 @@ mod win {
     mod tests {
         use super::*;
         #[test]
+        fn resident_overlay_resolves_parent_moves_and_ignores_duplicate_metadata() {
+            let seq = 1_u64 << 48;
+            let mut snapshot = Snapshot {
+                drive: b'C',
+                ..Snapshot::default()
+            };
+            for (id, parent, name, directory) in [
+                (5, 5, ".", true),
+                (10, 5, "old", true),
+                (20, 10, "file.txt", false),
+            ] {
+                snapshot
+                    .add(&Parsed {
+                        frn: id | seq,
+                        is_dir: directory,
+                        names: vec![FileName {
+                            parent: parent | seq,
+                            namespace: 1,
+                            name: name.into(),
+                        }],
+                        size: Some(7),
+                        ..Parsed::default()
+                    })
+                    .unwrap();
+            }
+            let mut state = LiveVolume {
+                snapshot,
+                pending: HashMap::new(),
+                retry_at: Instant::now(),
+            };
+            let file = live_record(&state, 20).unwrap();
+            let mut duplicate = file.clone();
+            duplicate.names[0].namespace = 3;
+            duplicate.names.push(FileName {
+                parent: 10 | seq,
+                namespace: 2,
+                name: "FILE~1.TXT".into(),
+            });
+            assert!(same_visible_record(Some(&file), Some(&duplicate)));
+            duplicate.modified = Some(22);
+            assert!(!same_visible_record(Some(&file), Some(&duplicate)));
+            let mut parent = live_record(&state, 10).unwrap();
+            parent.names[0].name = "new".into();
+            state.pending.insert(10, Some(parent));
+            assert_eq!(live_directory(&state, 10 | seq, 0).unwrap(), "C:\\new");
+            assert!(record_in_scope(&state, &file, &["C:\\new".into()], &[]));
+            assert!(record_private(&state, &file, &["C:\\new".into()]));
+            let mut linked = file.clone();
+            linked.names.push(FileName {
+                parent: 5 | seq,
+                namespace: 1,
+                name: "public.txt".into(),
+            });
+            assert!(!record_private(&state, &linked, &["C:\\new".into()]));
+            assert!(!record_in_scope(
+                &state,
+                &file,
+                &["C:\\".into()],
+                &["C:\\new".into()]
+            ));
+            state.pending.insert(10, None);
+            assert!(live_directory(&state, 10 | seq, 0).is_none());
+            merge_pending(&mut state).unwrap();
+            assert!(live_record(&state, 10).is_none());
+            assert!(live_record(&state, 20).is_some());
+            assert!(state.pending.is_empty());
+        }
+        #[test]
         fn directory_links_hardlinks_and_scope_reconstruct_without_following_junctions() {
             let seq = 1_u64 << 48;
             let mut s = Snapshot {
@@ -1388,7 +2101,7 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::run;
+pub use win::{ResidentIndex, run};
 #[cfg(not(windows))]
 pub fn run(
     _: &[PathBuf],
@@ -1488,6 +2201,13 @@ fn load_snapshots(path: &Path) -> Result<Vec<Snapshot>, String> {
     Ok(snapshots)
 }
 fn save_snapshots(path: &Path, snapshots: &[Snapshot]) -> Result<(), String> {
+    save_snapshot_refs(path, snapshots.iter())
+}
+fn save_snapshot_refs<'a>(
+    path: &Path,
+    snapshots: impl Iterator<Item = &'a Snapshot>,
+) -> Result<(), String> {
+    let snapshots: Vec<&Snapshot> = snapshots.collect();
     use std::io::{BufWriter, Write};
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
