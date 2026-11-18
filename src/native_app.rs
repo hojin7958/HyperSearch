@@ -48,6 +48,7 @@ const SHELL_EVENT: u32 = WM_APP + 31;
 const HEADER_CHANGED: u32 = WM_APP + 32;
 const WATCH_WORK: u32 = WM_APP + 33;
 const ACCESSIBILITY_CHANGED: u32 = WM_APP + 34;
+const DOWNLOADS_CHANGED: u32 = WM_APP + 35;
 const SAVE_TIMER: usize = 1;
 const CHANGE_TIMER: usize = 2;
 const CACHE_TIMER: usize = 3;
@@ -105,6 +106,7 @@ enum AppEvent {
         checkpoint: u128,
         request_id: u128,
         delta_stamp: Option<std::time::SystemTime>,
+        downloads: Option<Arc<crate::downloads::Listing>>,
         result: Result<Arc<SearchEngine>, String>,
     },
     ResidentInstalled(Result<(), String>),
@@ -709,7 +711,7 @@ impl WatchInbox {
         let target = if state.compacted {
             if foreground { 2000 } else { 5000 }
         } else if foreground {
-            900u32
+            80u32
         } else {
             15_000u32
         };
@@ -934,6 +936,9 @@ struct App {
     full_recovery: bool,
     recovery_label: &'static str,
     resident_active: bool,
+    downloads: Option<crate::downloads::DownloadFolder>,
+    displayed_downloads: Option<Arc<crate::downloads::Listing>>,
+    service_read_deferred: bool,
     resident_checkpoint: u128,
     resident_loading: bool,
     resident_request_at: Instant,
@@ -1080,6 +1085,9 @@ pub fn run(settings: Settings) -> Result<(), String> {
             full_recovery: false,
             recovery_label: "변경분 반영 중",
             resident_active: false,
+            downloads: None,
+            displayed_downloads: None,
+            service_read_deferred: false,
             resident_checkpoint: 0,
             resident_loading: false,
             resident_request_at: Instant::now() - Duration::from_secs(20),
@@ -1189,6 +1197,7 @@ pub fn run(settings: Settings) -> Result<(), String> {
         app.events.stopped.store(true, Ordering::Release);
         app.cancel.store(true, Ordering::Relaxed);
         app.watcher = None;
+        app.downloads = None;
         let _ = app.settings.save();
         if app.cache_dirty {
             if let Some(engine) = &app.engine {
@@ -1350,7 +1359,7 @@ unsafe extern "system" fn main_proc(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
                 RELEASE_TIMER if app.settings.check_updates_on_startup => app.check_release(false),
                 RESIDENT_TIMER => {
                     app.poll_resident();
-                    SetTimer(hwnd, RESIDENT_TIMER, 2000, None);
+                    app.schedule_resident_poll();
                 }
                 STARTUP_SYNC_TIMER if app.settings.fast_index => {
                     if app.indexing
@@ -1390,8 +1399,17 @@ unsafe extern "system" fn main_proc(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
             app.update_status();
             0
         }
+        DOWNLOADS_CHANGED => {
+            if IsWindowVisible(hwnd) != 0 && !app.settings.query.is_empty() {
+                SetTimer(hwnd, RESIDENT_TIMER, 1, None);
+            }
+            0
+        }
         WM_ACTIVATE => {
             app.schedule_changes();
+            if w as u16 != WA_INACTIVE as u16 && app.resident_active {
+                SetTimer(hwnd, RESIDENT_TIMER, 1, None);
+            }
             DefWindowProcW(hwnd, message, w, l)
         }
         message if message == WM_APP + 3 => {
@@ -1947,7 +1965,7 @@ impl App {
             SetTimer(self.hwnd, RELEASE_TIMER, 5000, None);
         }
         self.start_scan(true, false);
-        SetTimer(self.hwnd, RESIDENT_TIMER, 2000, None);
+        self.schedule_resident_poll();
         self.update_status();
     }
     unsafe fn start_scan(&mut self, use_cache: bool, rebuild: bool) {
@@ -2046,6 +2064,7 @@ impl App {
                                 checkpoint,
                                 request_id: view.request_id,
                                 delta_stamp: view.delta_stamp,
+                                downloads: None,
                                 result: Ok(Arc::new(SearchEngine::new(Arc::new(view.index)))),
                             });
                             return;
@@ -2109,6 +2128,7 @@ impl App {
     unsafe fn configure_watcher(&mut self) {
         if self.resident_active || crate::resident::configured() {
             self.resident_active = true;
+            self.watch_downloads();
             self.watcher.take();
             self.pending.reset();
             return;
@@ -2487,6 +2507,7 @@ impl App {
                     checkpoint,
                     request_id,
                     delta_stamp,
+                    downloads,
                     result,
                 } => {
                     self.resident_loading = false;
@@ -2500,6 +2521,7 @@ impl App {
                             Ok(engine) => {
                                 self.resident_checkpoint = checkpoint;
                                 self.resident_delta_stamp = delta_stamp;
+                                self.displayed_downloads = downloads;
                                 self.accept_ready(engine, false);
                                 self.index_message = "백그라운드 동기화 · 최신 목록 반영".into();
                             }
@@ -3081,6 +3103,24 @@ impl App {
             })
             .expect("update worker");
     }
+    fn watch_downloads(&mut self) {
+        let hwnd = self.hwnd as isize;
+        self.displayed_downloads = None;
+        self.service_read_deferred = false;
+        self.downloads =
+            crate::downloads::DownloadFolder::for_settings(&self.settings, move || unsafe {
+                PostMessageW(hwnd as HWND, DOWNLOADS_CHANGED, 0, 0);
+            });
+    }
+    unsafe fn schedule_resident_poll(&self) {
+        let visible = IsWindowVisible(self.hwnd) != 0 && IsIconic(self.hwnd) == 0;
+        let interval = if self.resident_active && visible && !self.settings.query.is_empty() {
+            200
+        } else {
+            2000
+        };
+        SetTimer(self.hwnd, RESIDENT_TIMER, interval, None);
+    }
     unsafe fn poll_resident(&mut self) {
         if !crate::resident::enabled_for_process() {
             return;
@@ -3094,6 +3134,7 @@ impl App {
         }
         if !self.resident_active {
             self.resident_active = true;
+            self.watch_downloads();
             self.watcher.take();
             self.pending.reset();
             self.startup_sync_pending = false;
@@ -3123,36 +3164,76 @@ impl App {
             return;
         };
         let stamp = crate::resident::delta_stamp(&directory);
-        if (manifest.content_checkpoint() == self.resident_checkpoint
-            && stamp == self.resident_delta_stamp)
-            || !manifest.matches(&self.settings.roots, &self.settings.excluded_folders)
-        {
+        if !manifest.matches(&self.settings.roots, &self.settings.excluded_folders) {
+            return;
+        }
+        let downloads = self.downloads.as_ref().and_then(|d| d.latest());
+        let folder_changed = downloads.as_ref().is_some_and(|new| {
+            self.displayed_downloads
+                .as_ref()
+                .is_none_or(|old| !Arc::ptr_eq(old, new))
+        });
+        let reload_base = downloads.is_none() && self.displayed_downloads.is_some();
+        let service_changed = reload_base
+            || manifest.content_checkpoint() != self.resident_checkpoint
+            || stamp != self.resident_delta_stamp;
+        if !folder_changed && !service_changed {
             return;
         }
         self.resident_loading = true;
         let generation = self.generation;
-        let checkpoint = manifest.content_checkpoint();
         let events = self.events.clone();
-        let previous = (checkpoint == self.resident_checkpoint)
+        // A completed download can be applied to the displayed index first.
+        // Give an outstanding service update the next turn during sustained writes.
+        let folder_first = folder_changed
+            && !self.service_read_deferred
+            && self.resident_checkpoint != 0
+            && self.engine.is_some();
+        self.service_read_deferred = service_changed && folder_first;
+        let checkpoint = if folder_first {
+            self.resident_checkpoint
+        } else {
+            manifest.content_checkpoint()
+        };
+        let previous = (!reload_base && checkpoint == self.resident_checkpoint)
             .then(|| self.engine.clone())
             .flatten();
+        let displayed_stamp = self.resident_delta_stamp;
+        let request_barrier = self.resident_request_barrier;
         std::thread::Builder::new()
             .name("resident-snapshot".into())
             .spawn(move || {
                 background_priority();
-                let loaded = crate::resident::load_view(
-                    &directory,
-                    &manifest,
-                    previous.as_ref().map(|e| e.index().as_ref()),
-                );
+                let loaded = if let Some(engine) = previous
+                    .as_ref()
+                    .filter(|_| folder_first || !service_changed)
+                {
+                    Ok(crate::resident::LoadedView {
+                        index: engine.index().as_ref().clone(),
+                        delta_stamp: displayed_stamp,
+                        request_id: request_barrier,
+                    })
+                } else {
+                    crate::resident::load_view(
+                        &directory,
+                        &manifest,
+                        previous.as_ref().map(|e| e.index().as_ref()),
+                    )
+                };
                 let request_id = loaded.as_ref().map_or(0, |v| v.request_id);
                 let delta_stamp = loaded.as_ref().ok().and_then(|v| v.delta_stamp);
-                let result = loaded.map(|view| Arc::new(SearchEngine::new(Arc::new(view.index))));
+                let result = loaded.map(|mut view| {
+                    if let Some(files) = &downloads {
+                        files.apply(&mut view.index);
+                    }
+                    Arc::new(SearchEngine::new(Arc::new(view.index)))
+                });
                 events.send(AppEvent::ResidentLoaded {
                     generation,
                     checkpoint,
                     request_id,
                     delta_stamp,
+                    downloads,
                     result,
                 });
             })
@@ -3205,7 +3286,13 @@ impl App {
             return;
         }
         match id {
-            QUERY if notification == EN_CHANGE => self.submit_search(),
+            QUERY if notification == EN_CHANGE => {
+                let was_empty = self.settings.query.is_empty();
+                self.submit_search();
+                if self.resident_active && was_empty && !self.settings.query.is_empty() {
+                    SetTimer(self.hwnd, RESIDENT_TIMER, 1, None);
+                }
+            }
             REGEX | PATH | CASE if notification == BN_CLICKED => self.submit_search(),
             KIND if notification == CBN_SELCHANGE => self.submit_search(),
             REFRESH if notification == BN_CLICKED && !self.indexing => {
@@ -4244,6 +4331,9 @@ impl App {
         );
         SetForegroundWindow(self.hwnd);
         SetFocus(self.query);
+        if self.resident_active {
+            SetTimer(self.hwnd, RESIDENT_TIMER, 1, None);
+        }
         if !self.pending.is_empty() {
             SetTimer(self.hwnd, CHANGE_TIMER, 1, None);
         }

@@ -1,6 +1,7 @@
 mod accessibility;
 pub mod cache;
 pub mod diagnostics;
+mod downloads;
 pub mod engine;
 pub mod exclusions;
 pub mod file_clipboard;

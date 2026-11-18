@@ -736,6 +736,9 @@ mod win {
             }
             let mut next = snapshot.next_usn;
             let mut changes = HashSet::new();
+            if next == target {
+                return Ok((changes, next));
+            }
             let mut buffer = vec![0; 1024 * 1024];
             while next < target {
                 if cancel.load(Ordering::Relaxed) {

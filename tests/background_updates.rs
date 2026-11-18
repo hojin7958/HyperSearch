@@ -140,6 +140,33 @@ fn hidden_app_reconciles_a_file_storm_and_keeps_watching() {
     let list = unsafe { GetDlgItem(window, 108) };
     let query = unsafe { GetDlgItem(window, 100) };
     let status = unsafe { GetDlgItem(window, 110) };
+    let temporary = root.join("Unconfirmed 123.crdownload");
+    let completed = root.join("download-check.pdf");
+    std::fs::write(&temporary, b"download").unwrap();
+    send(window, WM_APP + 3, 0, 0);
+    send(query, WM_SETTEXT, 0, wide("Unconfirmed").as_ptr() as isize);
+    until(|| row_name(window, list, 0) == "Unconfirmed 123.crdownload");
+    send(window, WM_CLOSE, 0, 0);
+    std::fs::rename(&temporary, &completed).unwrap();
+    let renamed = Instant::now();
+    send(window, WM_APP + 3, 0, 0);
+    send(
+        query,
+        WM_SETTEXT,
+        0,
+        wide("download-check.pdf").as_ptr() as isize,
+    );
+    until(|| {
+        send(list, LVM_GETITEMCOUNT, 0, 0) == 1 && row_name(window, list, 0) == "download-check.pdf"
+    });
+    println!(
+        "download rename to search result after reopening: {:?}",
+        renamed.elapsed()
+    );
+    assert!(renamed.elapsed() < Duration::from_secs(1));
+    std::fs::remove_file(completed).unwrap();
+    send(query, WM_SETTEXT, 0, wide("").as_ptr() as isize);
+    until(|| send(list, LVM_GETITEMCOUNT, 0, 0) == 1 && row_name(window, list, 0) == "keep.txt");
     send(window, WM_CLOSE, 0, 0);
     assert_eq!(unsafe { IsWindowVisible(window) }, 0);
     let burst = root.join("burst");

@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     pub name: String,
     pub parent: u32,
@@ -54,6 +54,7 @@ pub struct EntryStore {
     base: Option<Arc<EntryStore>>,
     patches: BTreeMap<usize, Entry>,
     shared_len: usize,
+    folder_rows: OnceLock<(u32, Vec<u32>)>,
 }
 impl EntryStore {
     pub fn len(&self) -> usize {
@@ -152,6 +153,57 @@ impl EntryStore {
     pub fn iter(&self) -> impl ExactSizeIterator<Item = EntryView<'_>> + '_ {
         (0..self.len()).map(|row| self.entry(row))
     }
+    /// The watched folder is small relative to the volume. Cache only its
+    /// original row IDs on the immutable base, and visit subsequent edits separately.
+    pub(crate) fn retain_in_folder(
+        &mut self,
+        parent: u32,
+        mut keep: impl FnMut(EntryView<'_>) -> bool,
+    ) {
+        let Some(base) = &self.base else {
+            self.retain(|e| e.parent != parent || keep(e));
+            return;
+        };
+        let (cached_parent, rows) = base.folder_rows.get_or_init(|| {
+            (
+                parent,
+                base.records
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(row, r)| (r.0[1] == parent).then_some(row as u32))
+                    .collect(),
+            )
+        });
+        if *cached_parent != parent {
+            self.retain(|e| e.parent != parent || keep(e));
+            return;
+        }
+        let mut removed = Vec::new();
+        for &id in rows {
+            let row = id as usize;
+            if row < self.shared_len && !self.patches.contains_key(&row) && !keep(base.entry(row)) {
+                removed.push(row);
+            }
+        }
+        for (&row, entry) in &self.patches {
+            if entry.parent == parent && !keep(self.entry(row)) {
+                removed.push(row);
+            }
+        }
+        removed.sort_unstable();
+        for row in removed.into_iter().rev() {
+            self.remove_shared_row(row);
+        }
+    }
+    fn remove_shared_row(&mut self, row: usize) {
+        let last = self.shared_len - 1;
+        if row != last {
+            let replacement = self.entry(last).to_owned();
+            self.patches.insert(row, replacement);
+        }
+        self.patches.remove(&last);
+        self.shared_len -= 1;
+    }
     pub fn retain(&mut self, mut keep: impl FnMut(EntryView<'_>) -> bool) {
         if self.base.is_some() {
             // Dense row IDs are maintained by moving the last live row into a
@@ -162,13 +214,7 @@ impl EntryStore {
                     row += 1;
                     continue;
                 }
-                let last = self.shared_len - 1;
-                if row != last {
-                    let replacement = self.entry(last).to_owned();
-                    self.patches.insert(row, replacement);
-                }
-                self.patches.remove(&last);
-                self.shared_len -= 1;
+                self.remove_shared_row(row);
             }
             return;
         }
@@ -260,6 +306,10 @@ impl EntryStore {
                     .sum::<usize>();
         }
         self.records.capacity() * 28
+            + self
+                .folder_rows
+                .get()
+                .map_or(0, |(_, rows)| rows.capacity() * 4)
             + self.names.capacity()
             + self.wide_times.capacity() * 16
             + self.intern.as_ref().map_or(0, |m| m.capacity() * 24)

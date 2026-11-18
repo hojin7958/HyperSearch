@@ -87,11 +87,11 @@ pub fn owner_sid() -> Result<String, String> {
         Ok(sid)
     }
 }
-fn program_files() -> Result<PathBuf, String> {
+pub(crate) fn known_folder(folder: &windows_sys::core::GUID) -> Result<PathBuf, String> {
     unsafe {
         let mut ptr = null_mut();
-        if SHGetKnownFolderPath(&FOLDERID_ProgramFiles, 0, null_mut(), &mut ptr) < 0 {
-            return Err(error("설치 폴더"));
+        if SHGetKnownFolderPath(folder, KF_FLAG_DONT_VERIFY as u32, null_mut(), &mut ptr) < 0 {
+            return Err(error("Windows 폴더"));
         }
         let mut len = 0;
         while *ptr.add(len) != 0 {
@@ -108,7 +108,9 @@ fn directory(sid: &str) -> Result<PathBuf, String> {
     if !valid_sid(sid) {
         return Err("사용자 SID가 올바르지 않습니다.".into());
     }
-    Ok(program_files()?.join("HyperfinderIndexer").join(sid))
+    Ok(known_folder(&FOLDERID_ProgramFiles)?
+        .join("HyperfinderIndexer")
+        .join(sid))
 }
 pub fn current_directory() -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os("QUICKFIND_RESIDENT_TEST_DIR") {
@@ -621,7 +623,6 @@ fn run_loop(dir: &Path) -> Result<(), String> {
         version: env!("CARGO_PKG_VERSION").into(),
     };
     let mut last_publish = Instant::now() - Duration::from_secs(60);
-    let mut last_delta_publish = Instant::now() - Duration::from_secs(60);
     let mut retry_publish_at = Instant::now();
     let mut last_heartbeat = 0;
     let mut public_repair = current
@@ -697,11 +698,8 @@ fn run_loop(dir: &Path) -> Result<(), String> {
             .parent()
             .and_then(|p| read_json(&p.join("indexer-view.json")).ok())
             .unwrap_or(0);
-        let interval = if now().saturating_sub(viewed) < 30 {
-            15
-        } else {
-            60
-        };
+        let viewing = now().saturating_sub(viewed) < 30;
+        let checkpoint_interval = if viewing { 15 } else { 60 };
         let maintenance = index.raw_dirty() && last_publish.elapsed() >= Duration::from_secs(300);
         if !STOP.load(Ordering::Acquire)
             && (index.caught_up() || index.memory_pressure())
@@ -710,7 +708,7 @@ fn run_loop(dir: &Path) -> Result<(), String> {
             && (needs_first
                 || requested
                 || index.memory_pressure()
-                || last_publish.elapsed() >= Duration::from_secs(interval))
+                || last_publish.elapsed() >= Duration::from_secs(checkpoint_interval))
         {
             status.phase = "saving".into();
             status.heartbeat = now();
@@ -783,21 +781,21 @@ fn run_loop(dir: &Path) -> Result<(), String> {
             && index.caught_up()
             && index.delta_dirty()
             && !index.needs_checkpoint()
-            && (requested || last_delta_publish.elapsed() >= Duration::from_secs(interval))
         {
             if let Some(previous) = &mut current {
                 let mut delta = index.delta(previous.content_checkpoint(), unique(), now());
                 delta.request_id = last_request;
                 write_json(&dir.join("changes.json"), &delta)?;
-                previous.request_id = last_request;
-                write_json(&dir.join("current.json"), previous)?;
+                if previous.request_id != last_request {
+                    previous.request_id = last_request;
+                    write_json(&dir.join("current.json"), previous)?;
+                }
                 crate::diagnostics::record(
                     dir,
                     "delta_published",
                     serde_json::json!({"revision":delta.revision,"entries":delta.changes.len(),"full_scans":index.full_scans}),
                 );
                 index.delta_published();
-                last_delta_publish = Instant::now();
             }
         }
         status.heartbeat = now();
@@ -805,7 +803,9 @@ fn run_loop(dir: &Path) -> Result<(), String> {
             let _ = write_json(&dir.join("status.json"), &status);
             last_heartbeat = now();
         }
-        for _ in 0..10 {
+        // One journal batch coalesces duplicate writes and both halves of a
+        // rename. Only expensive checkpoints need a further batching window.
+        for _ in 0..if viewing { 2 } else { 10 } {
             if STOP.load(Ordering::Acquire) {
                 break;
             }

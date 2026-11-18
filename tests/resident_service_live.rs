@@ -22,8 +22,7 @@ impl Drop for Fixture {
     }
 }
 
-fn wait_for(index: &mut Option<(u128, Index)>, expected: impl Fn(&Index) -> bool) {
-    let request = resident::request(false).unwrap();
+fn wait_for(index: &mut Option<(u128, Index)>, request: u128, expected: impl Fn(&Index) -> bool) {
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         if let Some((dir, manifest)) = resident::manifest() {
@@ -43,7 +42,7 @@ fn wait_for(index: &mut Option<(u128, Index)>, expected: impl Fn(&Index) -> bool
             Instant::now() < deadline,
             "installed service did not publish the fixture change"
         );
-        std::thread::sleep(Duration::from_secs(2));
+        std::thread::sleep(Duration::from_millis(200));
     }
 }
 
@@ -59,23 +58,26 @@ fn installed_service_publishes_creations_renames_and_deletes_without_rescan() {
     )));
     assert!(before.roots.iter().any(|root| fixture.0.starts_with(root)));
     std::fs::create_dir(&fixture.0).unwrap();
-    let file_name = format!("resident-verification-{}.txt", std::process::id());
+    let file_name = format!("resident-verification-{}.crdownload", std::process::id());
     let old_path = fixture.0.join(&file_name);
     let new_name = format!("resident-renamed-{}.txt", std::process::id());
     std::fs::write(&old_path, b"owned service QA fixture").unwrap();
     let started = Instant::now();
     let mut view = None;
-    wait_for(&mut view, |index| {
+    wait_for(&mut view, resident::request(false).unwrap(), |index| {
         index.entries.iter().any(|entry| entry.name == file_name)
     });
     let creation_ms = started.elapsed().as_millis();
+    let renamed = Instant::now();
     std::fs::rename(&old_path, fixture.0.join(&new_name)).unwrap();
-    wait_for(&mut view, |index| {
+    // A completed download must reach ordinary searches without F5.
+    wait_for(&mut view, 0, |index| {
         !index.entries.iter().any(|entry| entry.name == file_name)
             && index.entries.iter().any(|entry| entry.name == new_name)
     });
+    let rename_ms = renamed.elapsed().as_millis();
     std::fs::remove_file(fixture.0.join(&new_name)).unwrap();
-    wait_for(&mut view, |index| {
+    wait_for(&mut view, 0, |index| {
         !index.entries.iter().any(|entry| entry.name == new_name)
     });
     let (_, after) = resident::manifest().unwrap();
@@ -85,7 +87,7 @@ fn installed_service_publishes_creations_renames_and_deletes_without_rescan() {
     );
     assert!(resident::status().is_some_and(|s| s.running && s.error.is_none()));
     println!(
-        "installed service: creation_ms={creation_ms}, create/rename/delete passed, full_scans={} unchanged, elapsed_ms={}, directory={}",
+        "installed service: creation_ms={creation_ms}, automatic_rename_ms={rename_ms}, create/rename/delete passed, full_scans={} unchanged, elapsed_ms={}, directory={}",
         after.full_scans,
         started.elapsed().as_millis(),
         dir.display()

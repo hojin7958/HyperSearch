@@ -224,6 +224,34 @@ fn service_snapshots_start_without_a_scan_and_refresh_while_hidden() {
     json(&service.join("changes.json"), &delta);
     send(query, WM_SETTEXT, 0, wide("delta-only").as_ptr() as isize);
     until(|| send(list, LVM_GETITEMCOUNT, 0, 0) == 1 && first_name(list) == "delta-only.txt");
+    // Keep the query in place across a browser-style rename. Start timing
+    // just after a reader poll so a long periodic timer cannot pass by luck.
+    send(window, WM_APP + 3, 0, 0);
+    send(query, WM_SETTEXT, 0, wide("report.pdf").as_ptr() as isize);
+    until(|| send(list, LVM_GETITEMCOUNT, 0, 0) == 0);
+    send(window, WM_TIMER, 7, 0);
+    let mut completed = delta.clone();
+    completed.revision += 1;
+    completed.changes.extend([
+        quickfind::resident_delta::Change {
+            path: root
+                .join("report.crdownload")
+                .to_string_lossy()
+                .into_owned(),
+            entry: None,
+        },
+        quickfind::resident_delta::Change {
+            path: root.join("report.pdf").to_string_lossy().into_owned(),
+            entry: Some(Entry {
+                name: "report.pdf".into(),
+                ..delta.changes[1].entry.clone().unwrap()
+            }),
+        },
+    ]);
+    let started = Instant::now();
+    json(&service.join("changes.json"), &completed);
+    until(|| send(list, LVM_GETITEMCOUNT, 0, 0) == 1 && first_name(list) == "report.pdf");
+    assert!(started.elapsed() < Duration::from_secs(1));
     assert_eq!(
         std::fs::metadata(service.join("snapshot-2.bin"))
             .unwrap()
